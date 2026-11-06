@@ -201,6 +201,11 @@ export interface AppSettings {
   editorFontSize: number;
   /** Font size (px) for the file-tree rows in the Files view. */
   fileTreeFontSize?: number;
+  /** Docked width (px) of the file tree in the Files view. */
+  fileTreeWidth?: number;
+  /** Files view: tuck the file tree into a right-edge rail that slides in
+   * on hover, instead of keeping it docked beside the editor. */
+  fileTreeAutoHide?: boolean;
   /** Which editor backs the file view. 'monaco' (the VS Code editor) is the
    * default and covers plain editing, the inline diff, blame, and markdown
    * editing. 'codemirror' is the legacy fallback. See docs/MONACO_MIGRATION.md. */

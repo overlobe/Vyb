@@ -101,7 +101,26 @@ interface FileExplorerProps {
   /** Context lines kept around each change when the Monaco diff's
    * "collapse unchanged lines" toggle is on. Default 6. */
   diffContextLines?: number;
+  /** Docked width of the file tree (px). Persisted by App.tsx. */
+  fileTreeWidth?: number;
+  /** When true the tree collapses to a slim rail on the right edge and
+   * slides in over the editor on hover, so a narrow split pane can give
+   * its whole width to the open file. */
+  fileTreeAutoHide?: boolean;
+  /** Persist tree layout changes (width after a drag, auto-hide toggle). */
+  onFileTreeLayoutChange?: (patch: { fileTreeWidth?: number; fileTreeAutoHide?: boolean }) => void;
 }
+
+/** Docked tree width limits, and the drag width below which releasing the
+ * handle switches the tree to auto-hide instead of clamping. */
+const TREE_MIN_WIDTH = 140;
+const TREE_MAX_WIDTH = 500;
+const TREE_COLLAPSE_AT = 100;
+/** Hover delays for the auto-hide tree: a short open delay so sweeping the
+ * pointer past the rail doesn't flash it, a longer close delay so a brief
+ * overshoot doesn't dismiss it. */
+const TREE_PEEK_OPEN_MS = 120;
+const TREE_PEEK_CLOSE_MS = 350;
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp']);
 const MD_EXT = /\.mdx?$/i;
@@ -763,6 +782,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   editorEngine = 'monaco',
   editorFontSize = 13,
   diffContextLines = 6,
+  fileTreeWidth = 240,
+  fileTreeAutoHide = false,
+  onFileTreeLayoutChange,
 }: FileExplorerProps, ref) {
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
   const [tabs, setTabs] = useState<FileTab[]>([]);
@@ -907,11 +929,60 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   // it escapes the tree pane's `overflow: hidden` clip.
   const [createMenuPos, setCreateMenuPos] = useState<{ top: number; right: number } | null>(null);
   const createMenuOpen = createMenuPos !== null;
-  const [treeWidth, setTreeWidth] = useState(240);
+  const [treeWidth, setTreeWidth] = useState(fileTreeWidth);
+  useEffect(() => { setTreeWidth(fileTreeWidth); }, [fileTreeWidth]);
+  const treeWidthRef = useRef(treeWidth);
+  treeWidthRef.current = treeWidth;
+  // Auto-hide mode: the tree lives in an overlay that `treePeek` slides in.
+  const [treeAutoHide, setTreeAutoHide] = useState(fileTreeAutoHide);
+  useEffect(() => { setTreeAutoHide(fileTreeAutoHide); }, [fileTreeAutoHide]);
+  const [treePeek, setTreePeek] = useState(false);
+  const peekTimerRef = useRef<number | null>(null);
+  const pointerInTreeRef = useRef(false);
+  // Unclamped width during a drag, so releasing below TREE_COLLAPSE_AT
+  // can collapse the tree rather than stopping at TREE_MIN_WIDTH.
+  const rawTreeWidthRef = useRef<number | null>(null);
+  // Width when the drag began — restored if the drag ends in a collapse,
+  // so the overlay (and a later re-dock) keeps the user's chosen width.
+  const dragStartTreeWidthRef = useRef<number | null>(null);
+  const schedulePeek = useCallback((open: boolean, delay: number) => {
+    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
+    peekTimerRef.current = window.setTimeout(() => {
+      peekTimerRef.current = null;
+      setTreePeek(open);
+    }, delay);
+  }, []);
+  useEffect(() => () => {
+    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
+  }, []);
   // DnD: source path tracked in a ref (no re-render needed during drag);
   // current target dir in state (drives the drop highlight).
   const dragSourceRef = useRef<string | null>(null);
   const [dragHover, setDragHover] = useState<string | null>(null);
+
+  // Keep the auto-hide tree open while the user is mid-interaction with
+  // something it spawned — the context menu and "New…" menu are
+  // position:fixed outside the overlay, so the pointer leaving the
+  // overlay to reach them must not dismiss it. Once the interaction
+  // ends, close it unless the pointer is back over the tree.
+  const treeHoldOpen = ctxMenu !== null || createMenuOpen || deleteTarget !== null
+    || renamingPath !== null || creating !== null || dragHover !== null;
+  const prevTreeHoldRef = useRef(treeHoldOpen);
+  useEffect(() => {
+    const wasHeld = prevTreeHoldRef.current;
+    prevTreeHoldRef.current = treeHoldOpen;
+    if (wasHeld && !treeHoldOpen && treeAutoHide && !pointerInTreeRef.current) {
+      schedulePeek(false, TREE_PEEK_CLOSE_MS);
+    }
+  }, [treeAutoHide, treeHoldOpen, schedulePeek]);
+  const onTreePointerEnter = useCallback(() => {
+    pointerInTreeRef.current = true;
+    schedulePeek(true, 0);
+  }, [schedulePeek]);
+  const onTreePointerLeave = useCallback(() => {
+    pointerInTreeRef.current = false;
+    if (!treeHoldOpen) schedulePeek(false, TREE_PEEK_CLOSE_MS);
+  }, [treeHoldOpen, schedulePeek]);
 
   // Close-tab dialog
   const [closingTabPath, setClosingTabPath] = useState<string | null>(null);
@@ -923,8 +994,38 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   const [conflictPaths, setConflictPaths] = useState<Set<string>>(new Set());
 
   const handleTreeResize = useCallback((delta: number) => {
-    setTreeWidth((w) => Math.max(140, Math.min(500, w - delta)));
+    if (dragStartTreeWidthRef.current === null) dragStartTreeWidthRef.current = treeWidthRef.current;
+    const raw = (rawTreeWidthRef.current ?? treeWidthRef.current) - delta;
+    rawTreeWidthRef.current = raw;
+    setTreeWidth(Math.max(TREE_MIN_WIDTH, Math.min(TREE_MAX_WIDTH, raw)));
   }, []);
+
+  const setTreeAutoHideMode = useCallback((next: boolean) => {
+    setTreeAutoHide(next);
+    // Switching to auto-hide happens with the pointer over the tree (the
+    // header button, or the end of a drag), so leave it showing until the
+    // pointer moves away — that shows where it went.
+    setTreePeek(next);
+    pointerInTreeRef.current = next;
+    onFileTreeLayoutChange?.({ fileTreeAutoHide: next });
+  }, [onFileTreeLayoutChange]);
+
+  const handleTreeResizeEnd = useCallback(() => {
+    const raw = rawTreeWidthRef.current;
+    const startWidth = dragStartTreeWidthRef.current;
+    rawTreeWidthRef.current = null;
+    dragStartTreeWidthRef.current = null;
+    if (raw === null) return;
+    if (raw < TREE_COLLAPSE_AT) {
+      if (startWidth !== null) setTreeWidth(startWidth);
+      setTreeAutoHideMode(true);
+      setTreePeek(false);
+      pointerInTreeRef.current = false;
+    } else {
+      onFileTreeLayoutChange?.({ fileTreeWidth: treeWidthRef.current });
+    }
+  }, [onFileTreeLayoutChange, setTreeAutoHideMode]);
+
 
   const refresh = useCallback(() => {
     window.api.listDir(workingDirectory).then(setRootEntries);
@@ -2626,6 +2727,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       }
       return <img className="file-md-img" src={resolved} alt={alt ?? ''} title={title} />;
     },
+    // Wide tables scroll inside their own box instead of setting a
+    // minimum width for the whole preview.
+    table(props: { children?: React.ReactNode }) {
+      return <div className="md-table-scroll"><table>{props.children}</table></div>;
+    },
   }), [activeMdDir]);
 
   // Keep the application Edit menu (main process) in sync with what's actually
@@ -2920,7 +3026,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             edit can re-mount it without React tearing down the parent. */}
         {activeMdShowing && activeTabPath && (
           <div
-            className="file-md-content readme-content"
+            className="file-md-content"
             // Intercept link clicks. Without this, clicking any
             // relative link inside the rendered markdown bubbles up
             // to Electron's default action, which is to navigate the
@@ -2954,15 +3060,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
               }
             }}
           >
-            <ErrorBoundary label={`md:${activeTabPath}`} key={activeTabPath}>
-              <Markdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={markdownComponents}
-              >
-                {mdContent.get(activeTabPath) ?? ''}
-              </Markdown>
-            </ErrorBoundary>
+            {/* The reading column is a separate element from the scroll
+                container: `.readme-content`'s max-width + auto margins on
+                the flex child itself stopped it stretching, so it always
+                laid out at 800px and was clipped in narrow panes. */}
+            <div className="readme-content">
+              <ErrorBoundary label={`md:${activeTabPath}`} key={activeTabPath}>
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                  components={markdownComponents}
+                >
+                  {mdContent.get(activeTabPath) ?? ''}
+                </Markdown>
+              </ErrorBoundary>
+            </div>
           </div>
         )}
         {/* Excalidraw editor — same swap-with-CodeMirror pattern as the md
@@ -3140,8 +3252,31 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
         )}
       </div>
 
-      <ResizeHandle direction="horizontal" onResize={handleTreeResize} />
-      <div className="file-tree-pane" style={{ width: treeWidth }}>
+      {treeAutoHide ? (
+        <div
+          className={`file-tree-rail${treePeek ? ' is-active' : ''}`}
+          onMouseEnter={() => schedulePeek(true, TREE_PEEK_OPEN_MS)}
+          onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
+          onClick={() => schedulePeek(true, 0)}
+          title="Files — hover to show"
+          aria-label="Show files"
+          role="button"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+            <path d="M1.5 3.5A1 1 0 012.5 2.5h3.3l1.2 1.5h6.5a1 1 0 011 1v7.5a1 1 0 01-1 1h-11a1 1 0 01-1-1z" />
+          </svg>
+          <span className="file-tree-rail-label">Files</span>
+        </div>
+      ) : (
+        <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
+      )}
+      <div
+        className={`file-tree-pane${treeAutoHide ? ' is-overlay' : ''}${treeAutoHide && treePeek ? ' is-peeking' : ''}`}
+        style={{ width: treeWidth }}
+        onMouseEnter={treeAutoHide ? onTreePointerEnter : undefined}
+        onMouseLeave={treeAutoHide ? onTreePointerLeave : undefined}
+        onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) setTreePeek(false); } : undefined}
+      >
         <div className="file-tree-header">
           <div className="file-tree-title">
             <span>Files</span>
@@ -3211,6 +3346,28 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
                 </div>
               )}
             </div>
+            {/* Dock / auto-hide toggle. Auto-hide tucks the tree into a
+                rail on the right edge and slides it over the editor on
+                hover — useful when the Files pane is a narrow split. */}
+            <button
+              className={`file-tree-action-btn${treeAutoHide ? ' is-active' : ''}`}
+              onClick={() => setTreeAutoHideMode(!treeAutoHide)}
+              title={treeAutoHide ? 'Keep the file list open' : 'Auto-hide the file list (show on hover)'}
+              aria-pressed={treeAutoHide}
+            >
+              {treeAutoHide ? (
+                // pin: dock the tree again
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" />
+                </svg>
+              ) : (
+                // panel with an arrow pointing right: tuck the tree away
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+                  <path d="M10 2.5v11M5 6l2 2-2 2" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
         <div
