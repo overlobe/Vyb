@@ -4706,6 +4706,10 @@ select option {
   visibility: visible;
   transition: transform 0.16s ease, visibility 0s;
 }
+/* Kept open (clicked into): an accent edge says it won't hide on leave. */
+.file-tree-pane.is-overlay.is-sticky {
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35), inset 2px 0 0 var(--c-blue);
+}
 @media (prefers-reduced-motion: reduce) {
   .file-tree-pane.is-overlay,
   .file-tree-pane.is-overlay.is-peeking {

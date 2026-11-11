@@ -937,6 +937,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   const [treeAutoHide, setTreeAutoHide] = useState(fileTreeAutoHide);
   useEffect(() => { setTreeAutoHide(fileTreeAutoHide); }, [fileTreeAutoHide]);
   const [treePeek, setTreePeek] = useState(false);
+  // Sticky: the user clicked the rail or inside the overlay, so it stays
+  // open when the pointer leaves, until a click outside it or Escape.
+  // Hovering alone only peeks.
+  const [treeSticky, setTreeSticky] = useState(false);
+  const treePaneRef = useRef<HTMLDivElement | null>(null);
+  const treeRailRef = useRef<HTMLDivElement | null>(null);
   const peekTimerRef = useRef<number | null>(null);
   const pointerInTreeRef = useRef(false);
   // Unclamped width during a drag, so releasing below TREE_COLLAPSE_AT
@@ -971,18 +977,58 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   useEffect(() => {
     const wasHeld = prevTreeHoldRef.current;
     prevTreeHoldRef.current = treeHoldOpen;
-    if (wasHeld && !treeHoldOpen && treeAutoHide && !pointerInTreeRef.current) {
+    if (wasHeld && !treeHoldOpen && treeAutoHide && !treeSticky && !pointerInTreeRef.current) {
       schedulePeek(false, TREE_PEEK_CLOSE_MS);
     }
-  }, [treeAutoHide, treeHoldOpen, schedulePeek]);
+  }, [treeAutoHide, treeHoldOpen, treeSticky, schedulePeek]);
   const onTreePointerEnter = useCallback(() => {
     pointerInTreeRef.current = true;
     schedulePeek(true, 0);
   }, [schedulePeek]);
   const onTreePointerLeave = useCallback(() => {
     pointerInTreeRef.current = false;
-    if (!treeHoldOpen) schedulePeek(false, TREE_PEEK_CLOSE_MS);
-  }, [treeHoldOpen, schedulePeek]);
+    if (!treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS);
+  }, [treeHoldOpen, treeSticky, schedulePeek]);
+  // Any click inside the overlay means the user is working in it: keep it.
+  const onTreePointerDown = useCallback(() => {
+    setTreeSticky(true);
+    schedulePeek(true, 0);
+  }, [schedulePeek]);
+  const closeTreeOverlay = useCallback(() => {
+    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
+    peekTimerRef.current = null;
+    setTreeSticky(false);
+    setTreePeek(false);
+  }, []);
+  // A closed overlay is never sticky.
+  useEffect(() => { if (!treePeek) setTreeSticky(false); }, [treePeek]);
+  // While sticky: close on a click outside the overlay and its rail (menus
+  // it spawned don't count), on Escape, or when focus moves into an
+  // iframe/webview (a PDF, the Kanban board), whose clicks never reach
+  // this document.
+  useEffect(() => {
+    if (!treeAutoHide || !treeSticky || !treePeek) return;
+    const inside = (target: EventTarget | null) => {
+      const el = target instanceof Element ? target : null;
+      if (!el) return false;
+      return !!(treePaneRef.current?.contains(el) || treeRailRef.current?.contains(el)
+        || el.closest('.file-context-menu') || el.closest('.modal-overlay, [role="dialog"]'));
+    };
+    const onDown = (e: MouseEvent) => { if (!treeHoldOpen && !inside(e.target)) closeTreeOverlay(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); };
+    const onBlur = () => {
+      const tag = document.activeElement?.tagName;
+      if (!treeHoldOpen && (tag === 'IFRAME' || tag === 'WEBVIEW')) closeTreeOverlay();
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [treeAutoHide, treeSticky, treePeek, treeHoldOpen, closeTreeOverlay]);
 
   // Close-tab dialog
   const [closingTabPath, setClosingTabPath] = useState<string | null>(null);
@@ -3254,11 +3300,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
 
       {treeAutoHide ? (
         <div
+          ref={treeRailRef}
           className={`file-tree-rail${treePeek ? ' is-active' : ''}`}
           onMouseEnter={() => schedulePeek(true, TREE_PEEK_OPEN_MS)}
-          onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
-          onClick={() => schedulePeek(true, 0)}
-          title="Files — hover to show"
+          onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
+          onClick={() => { setTreeSticky(true); schedulePeek(true, 0); }}
+          title="Files — hover to peek, click to keep open"
           aria-label="Show files"
           role="button"
         >
@@ -3271,11 +3318,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
         <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
       )}
       <div
-        className={`file-tree-pane${treeAutoHide ? ' is-overlay' : ''}${treeAutoHide && treePeek ? ' is-peeking' : ''}`}
+        ref={treePaneRef}
+        className={`file-tree-pane${treeAutoHide ? ' is-overlay' : ''}${treeAutoHide && treePeek ? ' is-peeking' : ''}${treeAutoHide && treeSticky ? ' is-sticky' : ''}`}
         style={{ width: treeWidth }}
         onMouseEnter={treeAutoHide ? onTreePointerEnter : undefined}
         onMouseLeave={treeAutoHide ? onTreePointerLeave : undefined}
-        onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) setTreePeek(false); } : undefined}
+        onMouseDownCapture={treeAutoHide ? onTreePointerDown : undefined}
+        onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); } : undefined}
       >
         <div className="file-tree-header">
           <div className="file-tree-title">
@@ -3352,7 +3401,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             <button
               className={`file-tree-action-btn${treeAutoHide ? ' is-active' : ''}`}
               onClick={() => setTreeAutoHideMode(!treeAutoHide)}
-              title={treeAutoHide ? 'Keep the file list open' : 'Auto-hide the file list (show on hover)'}
+              title={treeAutoHide ? 'Dock the file list beside the editor' : 'Auto-hide the file list (show on hover)'}
               aria-pressed={treeAutoHide}
             >
               {treeAutoHide ? (
