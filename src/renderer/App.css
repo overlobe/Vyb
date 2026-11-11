@@ -4693,11 +4693,12 @@ select option {
 .file-tree-pane.is-overlay {
   position: absolute;
   top: 0;
-  right: 0;
+  /* Opens beside the rail, so the rail (and its dock button) stays visible. */
+  right: 22px;
   bottom: 0;
   z-index: 30;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
-  transform: translateX(100%);
+  transform: translateX(calc(100% + 22px));
   visibility: hidden;
   transition: transform 0.16s ease, visibility 0s linear 0.16s;
 }
@@ -4744,6 +4745,41 @@ select option {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+/* Dock button at the foot of the rail: one click keeps the tree open. */
+.file-tree-rail-dock {
+  margin-top: auto;
+  margin-bottom: 8px;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+}
+.file-tree-rail-dock:hover {
+  color: var(--c-blue);
+  background: var(--c-surface1);
+}
+/* Resize grip on the overlay's left edge; reuses ResizeHandle. */
+.file-tree-overlay-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  z-index: 3;
+}
+.file-tree-overlay-grip > .resize-handle {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  cursor: col-resize;
+}
+.file-tree-overlay-grip > .resize-handle:hover,
+.file-tree-overlay-grip > .resize-handle:active {
+  background: var(--c-blue);
 }
 
 .file-tree-header {

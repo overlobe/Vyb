@@ -933,6 +933,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   useEffect(() => { setTreeWidth(fileTreeWidth); }, [fileTreeWidth]);
   const treeWidthRef = useRef(treeWidth);
   treeWidthRef.current = treeWidth;
+  const onFileTreeLayoutChangeRef = useRef(onFileTreeLayoutChange);
+  onFileTreeLayoutChangeRef.current = onFileTreeLayoutChange;
   // Auto-hide mode: the tree lives in an overlay that `treePeek` slides in.
   const [treeAutoHide, setTreeAutoHide] = useState(fileTreeAutoHide);
   useEffect(() => { setTreeAutoHide(fileTreeAutoHide); }, [fileTreeAutoHide]);
@@ -951,6 +953,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   // Width when the drag began — restored if the drag ends in a collapse,
   // so the overlay (and a later re-dock) keeps the user's chosen width.
   const dragStartTreeWidthRef = useRef<number | null>(null);
+  // Resizing the overlay from its left edge: same width as the docked tree,
+  // but releasing below the minimum just clamps (it's already tucked away).
+  const handleOverlayResizeEnd = useCallback(() => {
+    rawTreeWidthRef.current = null;
+    dragStartTreeWidthRef.current = null;
+    onFileTreeLayoutChangeRef.current?.({ fileTreeWidth: treeWidthRef.current });
+  }, []);
+
   const schedulePeek = useCallback((open: boolean, delay: number) => {
     if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
     peekTimerRef.current = window.setTimeout(() => {
@@ -3304,7 +3314,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           className={`file-tree-rail${treePeek ? ' is-active' : ''}`}
           onMouseEnter={() => schedulePeek(true, TREE_PEEK_OPEN_MS)}
           onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
-          onClick={() => { setTreeSticky(true); schedulePeek(true, 0); }}
+          onClick={() => {
+            if (treePeek && treeSticky) { closeTreeOverlay(); return; }
+            setTreeSticky(true);
+            schedulePeek(true, 0);
+          }}
           title="Files — hover to peek, click to keep open"
           aria-label="Show files"
           role="button"
@@ -3313,6 +3327,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             <path d="M1.5 3.5A1 1 0 012.5 2.5h3.3l1.2 1.5h6.5a1 1 0 011 1v7.5a1 1 0 01-1 1h-11a1 1 0 01-1-1z" />
           </svg>
           <span className="file-tree-rail-label">Files</span>
+          <button
+            className="file-tree-rail-dock"
+            onClick={(e) => { e.stopPropagation(); setTreeAutoHideMode(false); setTreePeek(false); }}
+            title="Dock the file list beside the editor (keeps it open; drag its edge to resize)"
+            aria-label="Dock the file list"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" />
+            </svg>
+          </button>
         </div>
       ) : (
         <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
@@ -3326,6 +3350,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
         onMouseDownCapture={treeAutoHide ? onTreePointerDown : undefined}
         onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); } : undefined}
       >
+        {treeAutoHide && (
+          <div className="file-tree-overlay-grip" title="Drag to resize">
+            <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleOverlayResizeEnd} />
+          </div>
+        )}
         <div className="file-tree-header">
           <div className="file-tree-title">
             <span>Files</span>
