@@ -933,8 +933,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   useEffect(() => { setTreeWidth(fileTreeWidth); }, [fileTreeWidth]);
   const treeWidthRef = useRef(treeWidth);
   treeWidthRef.current = treeWidth;
-  const onFileTreeLayoutChangeRef = useRef(onFileTreeLayoutChange);
-  onFileTreeLayoutChangeRef.current = onFileTreeLayoutChange;
   // Auto-hide mode: the tree lives in an overlay that `treePeek` slides in.
   const [treeAutoHide, setTreeAutoHide] = useState(fileTreeAutoHide);
   useEffect(() => { setTreeAutoHide(fileTreeAutoHide); }, [fileTreeAutoHide]);
@@ -953,14 +951,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   // Width when the drag began — restored if the drag ends in a collapse,
   // so the overlay (and a later re-dock) keeps the user's chosen width.
   const dragStartTreeWidthRef = useRef<number | null>(null);
-  // Resizing the overlay from its left edge: same width as the docked tree,
-  // but releasing below the minimum just clamps (it's already tucked away).
-  const handleOverlayResizeEnd = useCallback(() => {
-    rawTreeWidthRef.current = null;
-    dragStartTreeWidthRef.current = null;
-    onFileTreeLayoutChangeRef.current?.({ fileTreeWidth: treeWidthRef.current });
-  }, []);
-
   const schedulePeek = useCallback((open: boolean, delay: number) => {
     if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
     peekTimerRef.current = window.setTimeout(() => {
@@ -1072,7 +1062,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     rawTreeWidthRef.current = null;
     dragStartTreeWidthRef.current = null;
     if (raw === null) return;
-    if (raw < TREE_COLLAPSE_AT) {
+    // Dragging well past the minimum tucks a docked tree away. The overlay
+    // is already tucked away, so there it just clamps.
+    if (raw < TREE_COLLAPSE_AT && !treeAutoHide) {
       if (startWidth !== null) setTreeWidth(startWidth);
       setTreeAutoHideMode(true);
       setTreePeek(false);
@@ -1080,7 +1072,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     } else {
       onFileTreeLayoutChange?.({ fileTreeWidth: treeWidthRef.current });
     }
-  }, [onFileTreeLayoutChange, setTreeAutoHideMode]);
+  }, [onFileTreeLayoutChange, setTreeAutoHideMode, treeAutoHide]);
 
 
   const refresh = useCallback(() => {
@@ -3338,9 +3330,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             </svg>
           </button>
         </div>
-      ) : (
-        <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
-      )}
+      ) : null}
       <div
         ref={treePaneRef}
         className={`file-tree-pane${treeAutoHide ? ' is-overlay' : ''}${treeAutoHide && treePeek ? ' is-peeking' : ''}${treeAutoHide && treeSticky ? ' is-sticky' : ''}`}
@@ -3350,11 +3340,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
         onMouseDownCapture={treeAutoHide ? onTreePointerDown : undefined}
         onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); } : undefined}
       >
-        {treeAutoHide && (
-          <div className="file-tree-overlay-grip" title="Drag to resize">
-            <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleOverlayResizeEnd} />
-          </div>
-        )}
+        {/* The tree's one resize handle, on its left edge whether docked
+            or showing as the auto-hide overlay. */}
+        <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
         <div className="file-tree-header">
           <div className="file-tree-title">
             <span>Files</span>
