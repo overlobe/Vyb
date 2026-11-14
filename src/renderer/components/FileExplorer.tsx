@@ -109,6 +109,11 @@ interface FileExplorerProps {
   fileTreeAutoHide?: boolean;
   /** Persist tree layout changes (width after a drag, auto-hide toggle). */
   onFileTreeLayoutChange?: (patch: { fileTreeWidth?: number; fileTreeAutoHide?: boolean }) => void;
+  /** External request (a nonce) to show the file tree — OS files were
+   * held over the Files tab. Opens the auto-hide overlay and keeps it open
+   * so the files can be dropped on a folder. No effect when docked. */
+  revealTreeRequest?: number | null;
+  onRevealTreeHandled?: () => void;
 }
 
 /** Docked tree width limits, and the drag width below which releasing the
@@ -785,6 +790,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   fileTreeWidth = 240,
   fileTreeAutoHide = false,
   onFileTreeLayoutChange,
+  revealTreeRequest,
+  onRevealTreeHandled,
 }: FileExplorerProps, ref) {
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
   const [tabs, setTabs] = useState<FileTab[]>([]);
@@ -1002,6 +1009,22 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   }, []);
   // A closed overlay is never sticky.
   useEffect(() => { if (!treePeek) setTreeSticky(false); }, [treePeek]);
+  // Open the overlay and keep it open, as a click on the rail does. Used
+  // when OS files are dragged in: HTML5 drags suppress the mouse events
+  // that drive hover-peek, and the drag must be able to cross the editor
+  // to reach the tree without it closing.
+  const openTreeSticky = useCallback(() => {
+    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
+    peekTimerRef.current = null;
+    setTreeSticky(true);
+    setTreePeek(true);
+  }, []);
+  // The Files tab sprang open under a file drag: show the tree.
+  useEffect(() => {
+    if (hidden || !revealTreeRequest) return;
+    if (treeAutoHide) openTreeSticky();
+    onRevealTreeHandled?.();
+  }, [hidden, revealTreeRequest, treeAutoHide, openTreeSticky, onRevealTreeHandled]);
   // While sticky: close on a click outside the overlay and its rail (menus
   // it spawned don't count), on Escape, or when focus moves into an
   // iframe/webview (a PDF, the Kanban board), whose clicks never reach
@@ -1470,6 +1493,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
 
   const handleDragEndItem = useCallback(() => {
     dragSourceRef.current = null;
+    setDragHover(null);
+  }, []);
+
+  // dragend only fires for drags that started in the tree, so an OS file
+  // drag that leaves the tree, is dropped elsewhere or is cancelled with
+  // Escape would leave its last folder highlighted, and the highlight
+  // holds the auto-hide overlay open. Clear it when the drag leaves the
+  // list; moves between rows inside the list don't count.
+  const handleTreeDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setDragHover(null);
   }, []);
 
@@ -3306,6 +3339,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           className={`file-tree-rail${treePeek ? ' is-active' : ''}`}
           onMouseEnter={() => schedulePeek(true, TREE_PEEK_OPEN_MS)}
           onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
+          onDragEnter={(e) => { if (e.dataTransfer.types.includes('Files')) openTreeSticky(); }}
           onClick={() => {
             if (treePeek && treeSticky) { closeTreeOverlay(); return; }
             setTreeSticky(true);
@@ -3440,6 +3474,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           className="file-tree-list"
           onContextMenu={handleTreeContextMenu}
           onDragOver={handleRootDragOver}
+          onDragLeave={handleTreeDragLeave}
           onDrop={handleRootDrop}
         >
           {creating && creating.dir === workingDirectory && (

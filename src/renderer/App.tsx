@@ -2151,6 +2151,19 @@ export function App() {
   const goKanban = useCallback(() => selectTab('kanban'), [selectTab]);
   const goWeb = useCallback(() => selectTab('web'), [selectTab]);
 
+  // OS files held over the Files tab: open Files with the full file list
+  // (leaving Changes mode) and ask that view to show its tree, even when
+  // the tree is auto-hidden, so the files can be dropped on a folder.
+  // `nonce` lets a repeat drag re-open a tree the user has since closed.
+  const [treeRevealRequest, setTreeRevealRequest] = useState<{ key: string; nonce: number } | null>(null);
+  const openFilesForDrop = useCallback(() => {
+    const key = activeViewKey;
+    if (!key) return;
+    selectTab('files');
+    setShowChangedFilesViews((prev) => removeFromSet(prev, key));
+    setTreeRevealRequest({ key, nonce: Date.now() });
+  }, [activeViewKey, selectTab]);
+
   // Derived current tab — the Agent tab is the default whenever no
   // overlay is active.
   const activeTab: 'agent' | 'files' | 'kanban' | 'web' = filesVisible ? 'files'
@@ -2587,6 +2600,7 @@ export function App() {
               return out;
             });
           }}
+          onFilesDragOpen={openFilesForDrop}
           navActive={navActive}
           showActionLabels={settings.showActionLabels === true}
           dictationListening={dictation.listening}
@@ -2683,6 +2697,8 @@ export function App() {
                   }}
                   pendingOpenPath={visible ? pendingFileOpen : null}
                   onPendingOpenHandled={() => setPendingFileOpen(null)}
+                  revealTreeRequest={visible && treeRevealRequest?.key === key ? treeRevealRequest.nonce : null}
+                  onRevealTreeHandled={() => setTreeRevealRequest(null)}
                   formatOnSave={settings.formatOnSave === true}
                   trimWhitespaceOnSave={settings.trimWhitespaceOnSave === true}
                   finalNewlineOnSave={settings.finalNewlineOnSave === true}

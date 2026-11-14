@@ -967,6 +967,12 @@
   color: var(--c-blue);
   opacity: 1;
 }
+/* OS files held over the Files tab, before it springs open. */
+.command-bar-tab.is-drop-target {
+  color: var(--c-blue);
+  background: color-mix(in srgb, var(--c-blue) 14%, transparent);
+  border-bottom-color: var(--c-blue);
+}
 
 /* Files tab "Files ▾ / Changes" switcher. */
 .command-bar-tab-wrap {

@@ -38,6 +38,10 @@ interface CommandBarProps {
    * drives the Files tab caption and the switcher dropdown. */
   filesShowChanges: boolean;
   onSetFilesShowChanges: (next: boolean) => void;
+  /** Files from the OS were dragged onto the Files tab and held there:
+   * open the Files view with its full file list showing, so they can be
+   * dropped on a folder in the tree. */
+  onFilesDragOpen: () => void;
   navActive: boolean;
   /** When false (default), the built-in action buttons (Terminal, Mic,
    * Folder) render icon-only. External app buttons are unaffected. */
@@ -50,6 +54,9 @@ interface CommandBarProps {
   onDictationStart: () => void;
   onDictationStop: () => void;
 }
+
+/** How long OS files must hover over the Files tab before it opens. */
+const FILES_TAB_SPRING_MS = 400;
 
 function NavNum({ active, idx }: { active: boolean; idx: number }) {
   if (!active || idx >= 10) return null;
@@ -84,6 +91,7 @@ export function CommandBar({
   externalApps,
   filesShowChanges,
   onSetFilesShowChanges,
+  onFilesDragOpen,
   navActive,
   showActionLabels,
   dictationListening,
@@ -230,6 +238,52 @@ export function CommandBar({
     };
   }, [filesMenuOpen]);
 
+  // Spring-loaded Files tab: holding OS files over it opens the Files
+  // view, so a file dragged in from Finder can be dropped on a folder in
+  // the tree. The short delay stops a drag that merely crosses the bar
+  // from switching views. Only OS file drags count — profile and tree
+  // drags carry other types.
+  const [filesDragOver, setFilesDragOver] = useState(false);
+  const filesSpringTimerRef = useRef<number | null>(null);
+  const onFilesDragOpenRef = useRef(onFilesDragOpen);
+  onFilesDragOpenRef.current = onFilesDragOpen;
+  const cancelFilesSpring = useCallback(() => {
+    if (filesSpringTimerRef.current !== null) window.clearTimeout(filesSpringTimerRef.current);
+    filesSpringTimerRef.current = null;
+  }, []);
+  useEffect(() => cancelFilesSpring, [cancelFilesSpring]);
+  const isOsFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  const onFilesTabDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isOsFileDrag(e)) return;
+    e.preventDefault();
+    setFilesDragOver(true);
+    if (filesSpringTimerRef.current !== null) return;
+    filesSpringTimerRef.current = window.setTimeout(() => {
+      filesSpringTimerRef.current = null;
+      onFilesDragOpenRef.current();
+    }, FILES_TAB_SPRING_MS);
+  }, []);
+  const onFilesTabDragOver = useCallback((e: React.DragEvent) => {
+    if (isOsFileDrag(e)) e.preventDefault();
+  }, []);
+  const onFilesTabDragLeave = useCallback((e: React.DragEvent) => {
+    // dragleave also fires when moving between the tab's own children.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    cancelFilesSpring();
+    setFilesDragOver(false);
+  }, [cancelFilesSpring]);
+  const onFilesTabDrop = useCallback((e: React.DragEvent) => {
+    if (!isOsFileDrag(e)) return;
+    e.preventDefault();
+    setFilesDragOver(false);
+    // Released before the spring fired: still open the view, so the
+    // user can drag the file again straight onto the right folder.
+    if (filesSpringTimerRef.current !== null) {
+      cancelFilesSpring();
+      onFilesDragOpenRef.current();
+    }
+  }, [cancelFilesSpring]);
+
   // Compact icon-only buttons get a modifier class so CSS can shrink the
   // horizontal padding (otherwise they'd look weirdly wide for a 16px icon).
   const actionBtnCls = showActionLabels ? 'action-btn' : 'action-btn action-btn-icon';
@@ -297,9 +351,16 @@ export function CommandBar({
     </button>
   );
   const filesTabButton = (
-    <div className="command-bar-tab-wrap" ref={filesMenuRef}>
+    <div
+      className="command-bar-tab-wrap"
+      ref={filesMenuRef}
+      onDragEnter={onFilesTabDragEnter}
+      onDragOver={onFilesTabDragOver}
+      onDragLeave={onFilesTabDragLeave}
+      onDrop={onFilesTabDrop}
+    >
       <button
-        className={`command-bar-tab ${activeTab === 'files' ? 'command-bar-tab-active' : ''}`}
+        className={`command-bar-tab ${activeTab === 'files' ? 'command-bar-tab-active' : ''}${filesDragOver ? ' is-drop-target' : ''}`}
         onClick={() => onSelectTab('files')}
         title={filesShowChanges ? 'Changed files only' : 'File explorer'}
       >

@@ -178,6 +178,8 @@ Settings → Apps tab. Each app: `name`, `icon` (key from `src/renderer/icons.ts
 
 **File operations**: Right-click context menu with Copy, Paste, Delete (confirmation dialog), Rename (inline input), New File, New Folder. Tree header has New File/Folder buttons. IPC channels: `FILE_DELETE`, `FILE_RENAME`, `FILE_COPY`, `FILE_CREATE_DIR`, `FILE_CREATE`, `FILE_SAVE_AS`.
 
+**Dropping files in from Finder**: OS files dropped on a folder row are copied into it (`importDroppedFiles`). The Files tab in `CommandBar` is spring-loaded: holding an OS file drag over it for `FILES_TAB_SPRING_MS` (400 ms) calls `openFilesForDrop` in `App.tsx`, which selects Files, leaves Changes mode, and sends a `revealTreeRequest` nonce that opens the auto-hide tree overlay sticky. The auto-hide rail opens the same way on a file `dragenter`, since HTML5 drags suppress the mouse events behind hover-peek. Only drags whose `dataTransfer.types` include `Files` count. `handleTreeDragLeave` clears the row highlight when an OS drag leaves the list, because `dragend` never fires for drags that began outside the window.
+
 Language detection by extension (JS/TS/JSON/CSS/HTML/Python/Markdown). Image files render as `<img>` via `local-file://`.
 
 ### Flame Indicators
