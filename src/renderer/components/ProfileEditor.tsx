@@ -44,7 +44,7 @@ interface ProfileEditorProps {
   /** Fire an icon generation in the background. App owns the lifecycle —
    * we just kick it off and forget. The dialog can be closed before the
    * generation finishes; App updates the saved profile in place. */
-  onStartIconGeneration?: (profileId: string, name: string) => void;
+  onStartIconGeneration?: (profileId: string, name: string, iconPrompt?: string) => void;
   /** Set of profile IDs that App is currently generating icons for —
    * drives the "Generating…" indicator. */
   pendingIconGenerations?: Set<string>;
@@ -78,6 +78,9 @@ export function ProfileEditor({
   const [botUsername, setBotUsername] = useState('');
   const [botToken, setBotToken] = useState('');
   const [gitRepoUrl, setGitRepoUrl] = useState('');
+  /** Optional description of what the AI icon should show. Saved with the
+   * profile so a later regenerate starts from the same words. */
+  const [iconPrompt, setIconPrompt] = useState('');
   /** All generated icons for this profile, newest first — regenerating
    * keeps older files, and this strip lets the user go back to one. */
   const [iconHistory, setIconHistory] = useState<{ path: string; mtime: number }[]>([]);
@@ -110,6 +113,7 @@ export function ProfileEditor({
     botUsername: profile?.remoteAgent?.botUsername ?? '',
     botToken: profile?.remoteAgent?.botToken ?? '',
     gitRepoUrl: profile?.gitRepoUrl ?? '',
+    iconPrompt: profile?.iconPrompt ?? '',
   });
   // Whether the user has saved this session — `handleSave` flips this to
   // true so the "are you sure?" prompt skips after a normal save+close.
@@ -136,6 +140,7 @@ export function ProfileEditor({
       setBotUsername(profile.remoteAgent?.botUsername ?? '');
       setBotToken(profile.remoteAgent?.botToken ?? '');
       setGitRepoUrl(profile.gitRepoUrl ?? '');
+      setIconPrompt(profile.iconPrompt ?? '');
       initialSnapshotRef.current = {
         name: profile.name,
         icon: profile.icon,
@@ -146,6 +151,7 @@ export function ProfileEditor({
         botUsername: profile.remoteAgent?.botUsername ?? '',
         botToken: profile.remoteAgent?.botToken ?? '',
         gitRepoUrl: profile.gitRepoUrl ?? '',
+        iconPrompt: profile.iconPrompt ?? '',
       };
     }
   }, [profile, agents]);
@@ -177,7 +183,7 @@ export function ProfileEditor({
     // Fire and forget. App owns the lifecycle and updates the saved
     // profile's icon when generation completes, even if the user has
     // already saved and closed this dialog.
-    onStartIconGeneration?.(id, name.trim());
+    onStartIconGeneration?.(id, name.trim(), iconPrompt.trim() || undefined);
   };
 
   // Refresh the in-dialog preview when the App's background generation
@@ -249,6 +255,7 @@ export function ProfileEditor({
               : undefined,
             botToken: botToken.trim() || undefined,
           },
+          iconPrompt: iconPrompt.trim() || undefined,
         }
       : {
           id,
@@ -259,6 +266,7 @@ export function ProfileEditor({
           parallelAgentEnabled,
           parallelAgentAutoPush,
           gitRepoUrl: gitRepoUrl.trim() || undefined,
+          iconPrompt: iconPrompt.trim() || undefined,
           // Store resolved command/args for backwards compat with older versions
           command: agent?.command || 'claude',
           args: agent?.args || [],
@@ -280,6 +288,7 @@ export function ProfileEditor({
     || botUsername !== initialSnapshotRef.current.botUsername
     || botToken !== initialSnapshotRef.current.botToken
     || gitRepoUrl !== initialSnapshotRef.current.gitRepoUrl
+    || iconPrompt !== initialSnapshotRef.current.iconPrompt
     || parallelAgentEnabled !== initialSnapshotRef.current.parallelAgentEnabled
     || parallelAgentAutoPush !== initialSnapshotRef.current.parallelAgentAutoPush
     || (pendingProfileId !== null && pendingProfileId !== profile?.id)
@@ -475,6 +484,24 @@ export function ProfileEditor({
                 {generating ? 'Generating...' : 'AI Generate'}
               </button>
             </div>
+            <textarea
+              className="field-textarea icon-prompt-input"
+              value={iconPrompt}
+              onChange={(e) => setIconPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                // ⌘/Ctrl+Enter generates; plain Enter adds a line.
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  if (!generating && name.trim()) handleGenerateIcon();
+                }
+              }}
+              placeholder="(optional) What should the icon show? e.g. a lighthouse made of circuit boards"
+              rows={2}
+              aria-label="Icon prompt"
+            />
+            <span className="field-hint">
+              Used by AI Generate with the project name. The style prompt and reference image from Settings still apply. ⌘↩ to generate.
+            </span>
             {(icon || generating) && (
               <div className={`icon-preview ${generating ? 'icon-generating' : ''}`}>
                 {icon && (

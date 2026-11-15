@@ -509,8 +509,8 @@ contextBridge.exposeInMainWorld('api', {
   loadReadme: (workingDirectory: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC_CHANNELS.README_LOAD, workingDirectory),
 
-  generateIcon: (profileId: string, projectName: string): Promise<string | null> =>
-    ipcRenderer.invoke(IPC_CHANNELS.GENERATE_ICON, profileId, projectName),
+  generateIcon: (profileId: string, projectName: string, iconPrompt?: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GENERATE_ICON, profileId, projectName, iconPrompt),
 
   iconHistory: (profileId: string): Promise<{ path: string; mtime: number }[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.ICON_HISTORY, profileId),

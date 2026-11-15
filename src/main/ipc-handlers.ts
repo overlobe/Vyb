@@ -4712,9 +4712,14 @@ export function setupIpcHandlers(window: BrowserWindow): void {
 
   ipcMain.handle(
     IPC_CHANNELS.GENERATE_ICON,
-    async (_, profileId: string, projectName: string): Promise<string | null> => {
+    async (_, profileId: string, projectName: string, iconPrompt?: string): Promise<string | null> => {
       const settings = loadSettings();
-      const prompt = `Make a project icon for the project "${projectName}" that matches the following universe: ${settings.iconPromptPrefix}`;
+      // The user's own description, when given, says what the icon shows;
+      // the universe (style) prompt still sets how it looks.
+      const subject = typeof iconPrompt === 'string' ? iconPrompt.trim() : '';
+      const prompt = subject
+        ? `Make a project icon for the project "${projectName}". The icon should show: ${subject}. Match the following universe: ${settings.iconPromptPrefix}`
+        : `Make a project icon for the project "${projectName}" that matches the following universe: ${settings.iconPromptPrefix}`;
 
       // Resolve the reference image, most specific wins:
       //   1. the containing folder/section's `referenceImage`

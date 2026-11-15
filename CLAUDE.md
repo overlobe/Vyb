@@ -188,6 +188,8 @@ Language detection by extension (JS/TS/JSON/CSS/HTML/Python/Markdown). Image fil
 
 Gemini and OpenAI providers. Settings store API keys, model selection, prompt prefix, optional reference image. Reference images sent as `inline_data` (Gemini) or multipart form (OpenAI `/v1/images/edits`). Icons saved to `{userData}/icons/{profileId}.png`. `iconRevision` counter busts browser cache. Batch generation runs in background.
 
+**Per-profile icon prompt**: the Profile Editor has an optional prompt box under the Icon row (⌘↩ generates). It's saved as `Profile.iconPrompt` and passed as the third argument of `generateIcon`. When set, the main-process prompt becomes `Make a project icon for the project "<name>". The icon should show: <iconPrompt>. Match the following universe: <iconPromptPrefix>`; when empty, the original prompt is used. The universe prompt and the reference image still apply either way. Batch generation passes each profile's `iconPrompt` too.
+
 ### Backup
 
 Export: `archiver` creates ZIP of profiles.json, settings.json, layout.json, icons/. Import: `adm-zip` extracts to userData. Both externalized in vite.main.config.ts.

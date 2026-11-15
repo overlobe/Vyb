@@ -267,7 +267,7 @@ declare global {
       onActivateProfileRequest: (
         callback: (payload: { profileId: string; parallelAgentId: string | null }) => void,
       ) => () => void;
-      generateIcon: (profileId: string, projectName: string) => Promise<string | null>;
+      generateIcon: (profileId: string, projectName: string, iconPrompt?: string) => Promise<string | null>;
       iconHistory: (profileId: string) => Promise<{ path: string; mtime: number }[]>;
       deleteIcon: (iconPath: string) => Promise<boolean>;
       loadLayout: () => Promise<SidebarLayout>;
@@ -1538,7 +1538,7 @@ export function App() {
       done++;
       setBatchProgress(`${done}/${withoutIcons.length}: ${profile.name}`);
       try {
-        const iconPath = await window.api.generateIcon(profile.id, profile.name);
+        const iconPath = await window.api.generateIcon(profile.id, profile.name, profile.iconPrompt);
         if (iconPath) {
           // Update the profile with the new icon
           setProfiles((prev) => {
@@ -1565,13 +1565,13 @@ export function App() {
    * close. When the generation resolves, we update the matching profile
    * (if it exists by then) and dispatch a window event so an open
    * ProfileEditor for the same id can refresh its preview. */
-  const handleStartIconGeneration = useCallback((profileId: string, name: string) => {
+  const handleStartIconGeneration = useCallback((profileId: string, name: string, iconPrompt?: string) => {
     setPendingIconGenerations((prev) => {
       const next = new Set(prev);
       next.add(profileId);
       return next;
     });
-    window.api.generateIcon(profileId, name)
+    window.api.generateIcon(profileId, name, iconPrompt)
       .then((iconPath) => {
         if (!iconPath) return;
         setProfiles((prev) => {

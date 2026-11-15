@@ -26,6 +26,10 @@ export interface Profile {
    * whenever the directory already contains a .git — an existing repo
    * is never touched. Clone output streams into the agent terminal. */
   gitRepoUrl?: string;
+  /** What the AI-generated icon should show, in the user's words. Added to
+   * the generation prompt alongside the project name; the style prompt
+   * and reference image from Settings still apply. */
+  iconPrompt?: string;
   /** Workspace this profile belongs to. Required after first launch — a
    * migration on load assigns any profile missing this field to the
    * Default workspace. Optional in the type only so the migration step
