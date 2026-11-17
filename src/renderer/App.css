@@ -4699,10 +4699,29 @@ select option {
   left: 0;
 }
 
-/* Collapsed: the tree stays mounted (folders and scroll survive) but
-   only the rail shows. */
-.file-tree-pane.is-collapsed {
-  display: none;
+/* Auto-hide: the tree leaves the layout and slides out beside the rail
+   while hovered. `.file-explorer` is the positioned, clipped container. */
+.file-tree-pane.is-overlay {
+  position: absolute;
+  top: 0;
+  right: 22px; /* beside the rail, which stays visible */
+  bottom: 0;
+  z-index: 30;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(100% + 22px));
+  visibility: hidden;
+  transition: transform 0.16s ease, visibility 0s linear 0.16s;
+}
+.file-tree-pane.is-overlay.is-peeking {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.16s ease, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-pane.is-overlay,
+  .file-tree-pane.is-overlay.is-peeking {
+    transition: none;
+  }
 }
 
 /* The rail: the tree's show/hide toggle, always on the right edge. */
@@ -4723,7 +4742,8 @@ select option {
   cursor: pointer;
   user-select: none;
 }
-.file-tree-rail:hover {
+.file-tree-rail:hover,
+.file-tree-rail.is-active {
   color: var(--c-text);
   background: var(--c-surface0);
 }

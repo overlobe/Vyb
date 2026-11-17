@@ -2692,7 +2692,7 @@ export function App() {
                   editorFontSize={settings.editorFontSize ?? 12}
                   diffContextLines={settings.diffContextLines ?? 6}
                   fileTreeWidth={settings.fileTreeWidth ?? 240}
-                  fileTreeCollapsed={settings.fileTreeCollapsed === true}
+                  fileTreeAutoHide={settings.fileTreeAutoHide === true}
                   onFileTreeLayoutChange={savePaneSizes}
                   showChangedOnly={showChangedFilesViews.has(key)}
                   onShowChangedOnlyChange={(next) => {
