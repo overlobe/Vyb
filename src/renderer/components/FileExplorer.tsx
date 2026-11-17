@@ -103,24 +103,19 @@ interface FileExplorerProps {
   diffContextLines?: number;
   /** Docked width of the file tree (px). Persisted by App.tsx. */
   fileTreeWidth?: number;
-  /** When true the tree collapses to a slim rail on the right edge and
-   * slides in over the editor on hover, so a narrow split pane can give
-   * its whole width to the open file. */
-  fileTreeAutoHide?: boolean;
-  /** Persist tree layout changes (width after a drag, auto-hide toggle). */
-  onFileTreeLayoutChange?: (patch: { fileTreeWidth?: number; fileTreeAutoHide?: boolean }) => void;
+  /** When true only the slim rail on the right edge shows; clicking the
+   * rail toggles the tree, so a narrow split pane can give its whole width
+   * to the open file. */
+  fileTreeCollapsed?: boolean;
+  /** Persist tree layout changes (width after a drag, collapsed toggle). */
+  onFileTreeLayoutChange?: (patch: { fileTreeWidth?: number; fileTreeCollapsed?: boolean }) => void;
 }
 
-/** Docked tree width limits, and the drag width below which releasing the
- * handle switches the tree to auto-hide instead of clamping. */
+/** Tree width limits, and the drag width below which releasing the
+ * handle collapses the tree instead of clamping. */
 const TREE_MIN_WIDTH = 140;
 const TREE_MAX_WIDTH = 500;
 const TREE_COLLAPSE_AT = 100;
-/** Hover delays for the auto-hide tree: a short open delay so sweeping the
- * pointer past the rail doesn't flash it, a longer close delay so a brief
- * overshoot doesn't dismiss it. */
-const TREE_PEEK_OPEN_MS = 120;
-const TREE_PEEK_CLOSE_MS = 350;
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp']);
 const MD_EXT = /\.mdx?$/i;
@@ -783,7 +778,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   editorFontSize = 13,
   diffContextLines = 6,
   fileTreeWidth = 240,
-  fileTreeAutoHide = false,
+  fileTreeCollapsed = false,
   onFileTreeLayoutChange,
 }: FileExplorerProps, ref) {
   const [rootEntries, setRootEntries] = useState<FileEntry[]>([]);
@@ -933,102 +928,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   useEffect(() => { setTreeWidth(fileTreeWidth); }, [fileTreeWidth]);
   const treeWidthRef = useRef(treeWidth);
   treeWidthRef.current = treeWidth;
-  // Auto-hide mode: the tree lives in an overlay that `treePeek` slides in.
-  const [treeAutoHide, setTreeAutoHide] = useState(fileTreeAutoHide);
-  useEffect(() => { setTreeAutoHide(fileTreeAutoHide); }, [fileTreeAutoHide]);
-  const [treePeek, setTreePeek] = useState(false);
-  // Sticky: the user clicked the rail or inside the overlay, so it stays
-  // open when the pointer leaves, until a click outside it or Escape.
-  // Hovering alone only peeks.
-  const [treeSticky, setTreeSticky] = useState(false);
-  const treePaneRef = useRef<HTMLDivElement | null>(null);
-  const treeRailRef = useRef<HTMLDivElement | null>(null);
-  const peekTimerRef = useRef<number | null>(null);
-  const pointerInTreeRef = useRef(false);
+  // Collapsed: only the rail shows. The tree stays mounted (just not
+  // displayed) so expanded folders and scroll position survive a toggle.
+  const [treeCollapsed, setTreeCollapsed] = useState(fileTreeCollapsed);
+  useEffect(() => { setTreeCollapsed(fileTreeCollapsed); }, [fileTreeCollapsed]);
   // Unclamped width during a drag, so releasing below TREE_COLLAPSE_AT
-  // can collapse the tree rather than stopping at TREE_MIN_WIDTH.
+  // collapses the tree rather than stopping at TREE_MIN_WIDTH.
   const rawTreeWidthRef = useRef<number | null>(null);
-  // Width when the drag began — restored if the drag ends in a collapse,
-  // so the overlay (and a later re-dock) keeps the user's chosen width.
+  // Width when the drag began, restored if the drag ends in a collapse so
+  // the tree comes back at the width the user chose.
   const dragStartTreeWidthRef = useRef<number | null>(null);
-  const schedulePeek = useCallback((open: boolean, delay: number) => {
-    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
-    peekTimerRef.current = window.setTimeout(() => {
-      peekTimerRef.current = null;
-      setTreePeek(open);
-    }, delay);
-  }, []);
-  useEffect(() => () => {
-    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
-  }, []);
   // DnD: source path tracked in a ref (no re-render needed during drag);
   // current target dir in state (drives the drop highlight).
   const dragSourceRef = useRef<string | null>(null);
   const [dragHover, setDragHover] = useState<string | null>(null);
-
-  // Keep the auto-hide tree open while the user is mid-interaction with
-  // something it spawned — the context menu and "New…" menu are
-  // position:fixed outside the overlay, so the pointer leaving the
-  // overlay to reach them must not dismiss it. Once the interaction
-  // ends, close it unless the pointer is back over the tree.
-  const treeHoldOpen = ctxMenu !== null || createMenuOpen || deleteTarget !== null
-    || renamingPath !== null || creating !== null || dragHover !== null;
-  const prevTreeHoldRef = useRef(treeHoldOpen);
-  useEffect(() => {
-    const wasHeld = prevTreeHoldRef.current;
-    prevTreeHoldRef.current = treeHoldOpen;
-    if (wasHeld && !treeHoldOpen && treeAutoHide && !treeSticky && !pointerInTreeRef.current) {
-      schedulePeek(false, TREE_PEEK_CLOSE_MS);
-    }
-  }, [treeAutoHide, treeHoldOpen, treeSticky, schedulePeek]);
-  const onTreePointerEnter = useCallback(() => {
-    pointerInTreeRef.current = true;
-    schedulePeek(true, 0);
-  }, [schedulePeek]);
-  const onTreePointerLeave = useCallback(() => {
-    pointerInTreeRef.current = false;
-    if (!treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS);
-  }, [treeHoldOpen, treeSticky, schedulePeek]);
-  // Any click inside the overlay means the user is working in it: keep it.
-  const onTreePointerDown = useCallback(() => {
-    setTreeSticky(true);
-    schedulePeek(true, 0);
-  }, [schedulePeek]);
-  const closeTreeOverlay = useCallback(() => {
-    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
-    peekTimerRef.current = null;
-    setTreeSticky(false);
-    setTreePeek(false);
-  }, []);
-  // A closed overlay is never sticky.
-  useEffect(() => { if (!treePeek) setTreeSticky(false); }, [treePeek]);
-  // While sticky: close on a click outside the overlay and its rail (menus
-  // it spawned don't count), on Escape, or when focus moves into an
-  // iframe/webview (a PDF, the Kanban board), whose clicks never reach
-  // this document.
-  useEffect(() => {
-    if (!treeAutoHide || !treeSticky || !treePeek) return;
-    const inside = (target: EventTarget | null) => {
-      const el = target instanceof Element ? target : null;
-      if (!el) return false;
-      return !!(treePaneRef.current?.contains(el) || treeRailRef.current?.contains(el)
-        || el.closest('.file-context-menu') || el.closest('.modal-overlay, [role="dialog"]'));
-    };
-    const onDown = (e: MouseEvent) => { if (!treeHoldOpen && !inside(e.target)) closeTreeOverlay(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); };
-    const onBlur = () => {
-      const tag = document.activeElement?.tagName;
-      if (!treeHoldOpen && (tag === 'IFRAME' || tag === 'WEBVIEW')) closeTreeOverlay();
-    };
-    document.addEventListener('mousedown', onDown, true);
-    document.addEventListener('keydown', onKey, true);
-    window.addEventListener('blur', onBlur);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, [treeAutoHide, treeSticky, treePeek, treeHoldOpen, closeTreeOverlay]);
 
   // Close-tab dialog
   const [closingTabPath, setClosingTabPath] = useState<string | null>(null);
@@ -1046,14 +959,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     setTreeWidth(Math.max(TREE_MIN_WIDTH, Math.min(TREE_MAX_WIDTH, raw)));
   }, []);
 
-  const setTreeAutoHideMode = useCallback((next: boolean) => {
-    setTreeAutoHide(next);
-    // Switching to auto-hide happens with the pointer over the tree (the
-    // header button, or the end of a drag), so leave it showing until the
-    // pointer moves away — that shows where it went.
-    setTreePeek(next);
-    pointerInTreeRef.current = next;
-    onFileTreeLayoutChange?.({ fileTreeAutoHide: next });
+  const setTreeCollapsedMode = useCallback((next: boolean) => {
+    setTreeCollapsed(next);
+    onFileTreeLayoutChange?.({ fileTreeCollapsed: next });
   }, [onFileTreeLayoutChange]);
 
   const handleTreeResizeEnd = useCallback(() => {
@@ -1062,17 +970,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     rawTreeWidthRef.current = null;
     dragStartTreeWidthRef.current = null;
     if (raw === null) return;
-    // Dragging well past the minimum tucks a docked tree away. The overlay
-    // is already tucked away, so there it just clamps.
-    if (raw < TREE_COLLAPSE_AT && !treeAutoHide) {
+    // Dragging well past the minimum collapses the tree to the rail.
+    if (raw < TREE_COLLAPSE_AT) {
       if (startWidth !== null) setTreeWidth(startWidth);
-      setTreeAutoHideMode(true);
-      setTreePeek(false);
-      pointerInTreeRef.current = false;
+      setTreeCollapsedMode(true);
     } else {
       onFileTreeLayoutChange?.({ fileTreeWidth: treeWidthRef.current });
     }
-  }, [onFileTreeLayoutChange, setTreeAutoHideMode, treeAutoHide]);
+  }, [onFileTreeLayoutChange, setTreeCollapsedMode]);
 
 
   const refresh = useCallback(() => {
@@ -2775,11 +2680,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
       }
       return <img className="file-md-img" src={resolved} alt={alt ?? ''} title={title} />;
     },
-    // Wide tables scroll inside their own box instead of setting a
-    // minimum width for the whole preview.
-    table(props: { children?: React.ReactNode }) {
-      return <div className="md-table-scroll"><table>{props.children}</table></div>;
-    },
   }), [activeMdDir]);
 
   // Keep the application Edit menu (main process) in sync with what's actually
@@ -3112,7 +3012,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
                 container: `.readme-content`'s max-width + auto margins on
                 the flex child itself stopped it stretching, so it always
                 laid out at 800px and was clipped in narrow panes. */}
-            <div className="readme-content">
+            {/* lang enables hyphenation in narrow tables; the reader's own
+                language is the best guess for their documents. */}
+            <div className="readme-content" lang={navigator.language || 'en'}>
               <ErrorBoundary label={`md:${activeTabPath}`} key={activeTabPath}>
                 <Markdown
                   remarkPlugins={[remarkGfm]}
@@ -3300,48 +3202,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
         )}
       </div>
 
-      {treeAutoHide ? (
-        <div
-          ref={treeRailRef}
-          className={`file-tree-rail${treePeek ? ' is-active' : ''}`}
-          onMouseEnter={() => schedulePeek(true, TREE_PEEK_OPEN_MS)}
-          onMouseLeave={() => { if (!pointerInTreeRef.current && !treeHoldOpen && !treeSticky) schedulePeek(false, TREE_PEEK_CLOSE_MS); }}
-          onClick={() => {
-            if (treePeek && treeSticky) { closeTreeOverlay(); return; }
-            setTreeSticky(true);
-            schedulePeek(true, 0);
-          }}
-          title="Files — hover to peek, click to keep open"
-          aria-label="Show files"
-          role="button"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
-            <path d="M1.5 3.5A1 1 0 012.5 2.5h3.3l1.2 1.5h6.5a1 1 0 011 1v7.5a1 1 0 01-1 1h-11a1 1 0 01-1-1z" />
-          </svg>
-          <span className="file-tree-rail-label">Files</span>
-          <button
-            className="file-tree-rail-dock"
-            onClick={(e) => { e.stopPropagation(); setTreeAutoHideMode(false); setTreePeek(false); }}
-            title="Dock the file list beside the editor (keeps it open; drag its edge to resize)"
-            aria-label="Dock the file list"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" />
-            </svg>
-          </button>
-        </div>
-      ) : null}
       <div
-        ref={treePaneRef}
-        className={`file-tree-pane${treeAutoHide ? ' is-overlay' : ''}${treeAutoHide && treePeek ? ' is-peeking' : ''}${treeAutoHide && treeSticky ? ' is-sticky' : ''}`}
+        className={`file-tree-pane${treeCollapsed ? ' is-collapsed' : ''}`}
         style={{ width: treeWidth }}
-        onMouseEnter={treeAutoHide ? onTreePointerEnter : undefined}
-        onMouseLeave={treeAutoHide ? onTreePointerLeave : undefined}
-        onMouseDownCapture={treeAutoHide ? onTreePointerDown : undefined}
-        onKeyDown={treeAutoHide ? (e) => { if (e.key === 'Escape' && !treeHoldOpen) closeTreeOverlay(); } : undefined}
       >
-        {/* The tree's one resize handle, on its left edge whether docked
-            or showing as the auto-hide overlay. */}
+        {/* The tree's resize handle, on its left edge. */}
         <ResizeHandle direction="horizontal" onResize={handleTreeResize} onResizeEnd={handleTreeResizeEnd} />
         <div className="file-tree-header">
           <div className="file-tree-title">
@@ -3412,28 +3277,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
                 </div>
               )}
             </div>
-            {/* Dock / auto-hide toggle. Auto-hide tucks the tree into a
-                rail on the right edge and slides it over the editor on
-                hover — useful when the Files pane is a narrow split. */}
-            <button
-              className={`file-tree-action-btn${treeAutoHide ? ' is-active' : ''}`}
-              onClick={() => setTreeAutoHideMode(!treeAutoHide)}
-              title={treeAutoHide ? 'Dock the file list beside the editor' : 'Auto-hide the file list (show on hover)'}
-              aria-pressed={treeAutoHide}
-            >
-              {treeAutoHide ? (
-                // pin: dock the tree again
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" />
-                </svg>
-              ) : (
-                // panel with an arrow pointing right: tuck the tree away
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-                  <path d="M10 2.5v11M5 6l2 2-2 2" />
-                </svg>
-              )}
-            </button>
           </div>
         </div>
         <div
@@ -3485,6 +3328,22 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           ))}
         </div>
       </div>
+      {/* The rail is the tree's one show/hide control, always at the right
+          edge so it stays in the same place in both states. */}
+      <button
+        type="button"
+        className={`file-tree-rail${treeCollapsed ? '' : ' is-open'}`}
+        onClick={() => setTreeCollapsedMode(!treeCollapsed)}
+        title={treeCollapsed ? 'Show the file list' : 'Hide the file list'}
+        aria-label={treeCollapsed ? 'Show the file list' : 'Hide the file list'}
+        aria-expanded={!treeCollapsed}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          {/* chevron points the way the tree will move */}
+          <path d={treeCollapsed ? 'M10 4L6 8l4 4' : 'M6 4l4 4-4 4'} />
+        </svg>
+        <span className="file-tree-rail-label">Files</span>
+      </button>
 
       {/* Context menu */}
       {ctxMenu && (
