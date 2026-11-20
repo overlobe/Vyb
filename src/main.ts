@@ -259,6 +259,8 @@ function buildMenu() {
         // Split view (agent left + Files/Kanban/Web right) for the active
         // profile — routed to the renderer, which owns the per-view state.
         { label: 'Toggle Split View', accelerator: 'CmdOrCtrl+\\', click: toggleSplitView },
+        // Cross-repo summary of every profile's Ordna board (T-061).
+        { label: 'Task Overview', accelerator: 'CmdOrCtrl+Shift+K', click: openTaskOverview },
         { type: 'separator' as const },
         // macOS automatically appends its own "Enter Full Screen" item to
         // any menu titled "View" — adding our own there produced a
@@ -351,6 +353,12 @@ function findInFiles(withReplace: boolean) {
 function toggleSplitView() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IPC_CHANNELS.MENU_TOGGLE_SPLIT);
+  }
+}
+
+function openTaskOverview() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC_CHANNELS.MENU_TASK_OVERVIEW);
   }
 }
 

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import { IPC_CHANNELS, Profile, AppSettings, SidebarLayout, GitStatus, GitCommit, GitRef, GitCheckoutResult, GitCommitResult, GitOpResult, GitMergeResult, GitMergePreviewResult, GitRebaseResult, GitCreatePrResult, GitStash, FileEntry, ProfileMemoryMap, OrdnaTaskEnvelope, ParallelAgent, EditMenuAction, EditMenuState } from './shared/types';
+import { IPC_CHANNELS, Profile, AppSettings, SidebarLayout, GitStatus, GitCommit, GitRef, GitCheckoutResult, GitCommitResult, GitOpResult, GitMergeResult, GitMergePreviewResult, GitRebaseResult, GitCreatePrResult, GitStash, FileEntry, ProfileMemoryMap, OrdnaTaskEnvelope, ParallelAgent, EditMenuAction, EditMenuState, TaskOverviewResult } from './shared/types';
 
 contextBridge.exposeInMainWorld('api', {
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
@@ -447,6 +447,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.MENU_TOGGLE_SPLIT, handler);
   },
 
+  onMenuTaskOverview: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.MENU_TASK_OVERVIEW, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.MENU_TASK_OVERVIEW, handler);
+  },
+
   formatDocument: (filePath: string, content: string): Promise<{ content?: string; error?: string }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FILE_FORMAT, filePath, content),
 
@@ -541,6 +547,9 @@ contextBridge.exposeInMainWorld('api', {
 
   getOrdnaHookInfo: (): Promise<{ url: string; port: number }> =>
     ipcRenderer.invoke(IPC_CHANNELS.ORDNA_HOOK_INFO),
+
+  getTaskOverview: (): Promise<TaskOverviewResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.ORDNA_OVERVIEW),
 
   onOrdnaTask: (callback: (envelope: OrdnaTaskEnvelope) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, envelope: OrdnaTaskEnvelope) =>

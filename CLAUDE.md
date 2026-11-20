@@ -209,6 +209,16 @@ Export: `archiver` creates ZIP of profiles.json, settings.json, layout.json, ico
 
 `PtyManager.create()` accepts an optional `extraEnv` param to inject these vars into the spawned PTY environment.
 
+### Task Overview (cross-repo)
+
+View → Task Overview (`CmdOrCtrl+Shift+K`, IPC `MENU_TASK_OVERVIEW`) opens `TaskOverview.tsx`, a read-only summary of every profile's Ordna board (T-061). `src/main/task-overview.ts` (`collectTaskOverview`, IPC `ORDNA_OVERVIEW`) reads boards straight through `@frehilm/ordna-core`. It spawns no PTYs or Ordna servers and has no Electron imports, so it can move into ordna-core later.
+
+- **One project per resolved working directory.** Profiles that share a directory are merged (`profileIds`). Navigation uses the first one.
+- **Never creates Ordna state.** file/hybrid boards are only opened if the tasks dir exists, and namespace boards only if `refs/ordna/state` exists, because backend `init()` would otherwise `mkdir` or write a ref. Every backend is `dispose()`d after `listTasks` so namespace auto-fetch timers don't linger.
+- **Buckets are positional**, per repo `statuses`: first = open, last = done, middle = doing, plus `archived`. Open tasks are `ready` (all same-repo `depends_on` done) or `blocked`. Doing tasks untouched for `STALE_DAYS` (14) are `stalled`. Tasks with a live Kanban-dispatched parallel agent get `agentRunning`.
+- **Refresh:** on open, on window focus, and via the Refresh button. No watchers yet.
+- **"Open board":** calls `goToProfile` (switches workspace if needed), then the `pendingKanbanFor` effect in `App.tsx` calls `selectTab('kanban')` once that profile is the active view.
+
 ## Vite Config
 
 - `vite.main.config.ts`: Externalizes `node-pty`, `archiver`, `adm-zip`, `@frehilm/ordna-core`, `@frehilm/ordna-web`

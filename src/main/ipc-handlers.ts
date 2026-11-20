@@ -11,6 +11,7 @@ import { StatusDetector } from './status-detector';
 import { loadProfiles, saveProfiles, loadSettings, saveSettings, loadLayout, saveLayout, loadProfileMemory, saveProfileMemory, loadScrollback, saveScrollback } from './config-loader';
 import * as ordnaHookServer from './ordna-hook-server';
 import { OrdnaManager } from './ordna-manager';
+import { collectTaskOverview } from './task-overview';
 import { ParallelAgentManager } from './parallel-agent-manager';
 import { applyAgentArgsGuards } from './agent-args-guard';
 import { sendCtrlCToPty, clearCtrlCState } from './windows-ctrlc';
@@ -4654,6 +4655,10 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.ORDNA_HOOK_INFO, () => {
     return { url: ordnaHookServer.getHookUrl(), port: ordnaHookServer.getActivePort() };
   });
+
+  // Cross-repo task overview (T-061): read-only summary of every profile's
+  // Ordna board. Spawns no PTYs or Ordna servers.
+  ipcMain.handle(IPC_CHANNELS.ORDNA_OVERVIEW, () => collectTaskOverview(profiles, parallelManager.list()));
 
   ipcMain.handle(
     IPC_CHANNELS.PARALLEL_AGENT_SPAWN,

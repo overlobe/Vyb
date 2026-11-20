@@ -14,6 +14,7 @@ import { RemoteChatPane } from './components/RemoteChatPane';
 import { toastError } from './lib/toast';
 import { FindInFilesPanel } from './components/FindInFilesPanel';
 import { KanbanViewer } from './components/KanbanViewer';
+import { TaskOverview } from './components/TaskOverview';
 import { WebViewer } from './components/WebViewer';
 import { ParallelAgentTerminal } from './components/ParallelAgentTerminal';
 import { StatusBar } from './components/StatusBar';
@@ -21,7 +22,7 @@ import { GitChangesPanel } from './components/GitChangesPanel';
 import { useKeyNav } from './components/KeyNav';
 import { HotkeyHints } from './components/HotkeyHints';
 import { useDictation } from './components/Dictation';
-import { Profile, AgentStatus, AppSettings, DEFAULT_SETTINGS, SidebarLayout, Workspace, GitStatus, GitCommit, GitBlameLine, GitRef, GitRemote, GitWorktree, GitReflogEntry, GitBisectStatus, GitLfsInfo, GitLfsLock, GitSubmodule, GitCheckoutResult, GitCommitResult, GitOpResult, GitMergeResult, GitMergePreviewResult, GitRebaseResult, GitCreatePrResult, GitStash, ExternalApp, FileEntry, ProfileMemoryMap, OrdnaTaskEnvelope, ParallelAgent, EditMenuAction, EditMenuState, FileSearchOptions, FileSearchResult, FileReplaceTarget, FileReplaceResult, AgentSessionList, DEFAULT_AGENTS, ACTIVE_PROFILES_WORKSPACE_ID, resolveAgent, buildSessionArgs, RemoteChatState, RemoteChatMessage, RemoteChatEvent, RemoteChatTopics, RemoteChatTopic } from '../shared/types';
+import { Profile, AgentStatus, AppSettings, DEFAULT_SETTINGS, SidebarLayout, Workspace, GitStatus, GitCommit, GitBlameLine, GitRef, GitRemote, GitWorktree, GitReflogEntry, GitBisectStatus, GitLfsInfo, GitLfsLock, GitSubmodule, GitCheckoutResult, GitCommitResult, GitOpResult, GitMergeResult, GitMergePreviewResult, GitRebaseResult, GitCreatePrResult, GitStash, ExternalApp, FileEntry, ProfileMemoryMap, OrdnaTaskEnvelope, ParallelAgent, EditMenuAction, EditMenuState, TaskOverviewResult, FileSearchOptions, FileSearchResult, FileReplaceTarget, FileReplaceResult, AgentSessionList, DEFAULT_AGENTS, ACTIVE_PROFILES_WORKSPACE_ID, resolveAgent, buildSessionArgs, RemoteChatState, RemoteChatMessage, RemoteChatEvent, RemoteChatTopics, RemoteChatTopic } from '../shared/types';
 import { applyTheme } from './theme';
 import './App.css';
 
@@ -236,6 +237,8 @@ declare global {
       onRemoteChatEvent: (callback: (event: RemoteChatEvent) => void) => () => void;
       onMenuFindInFiles: (callback: (payload: { withReplace: boolean }) => void) => () => void;
       onMenuToggleSplit: (callback: () => void) => () => void;
+      onMenuTaskOverview: (callback: () => void) => () => void;
+      getTaskOverview: () => Promise<TaskOverviewResult>;
       formatDocument: (filePath: string, content: string) => Promise<{ content?: string; error?: string }>;
       readFile: (filePath: string) => Promise<string | null>;
       readFileBinary: (filePath: string) => Promise<Uint8Array | null>;
@@ -340,6 +343,11 @@ export function App() {
   // flame is lit (any status except offline), across all workspaces.
   const [activeProfilesMode, setActiveProfilesMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Cross-repo task overview (T-061). `pendingKanbanFor` holds the profile
+  // whose Kanban should open once it becomes the active view (set by the
+  // overview's "Open board").
+  const [taskOverviewOpen, setTaskOverviewOpen] = useState(false);
+  const [pendingKanbanFor, setPendingKanbanFor] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(250);
   // Sidebar collapse-to-icons mode. Drives a snap behaviour when dragging
   // the resize handle past a threshold. When true, `sidebarWidth` is the
@@ -2198,6 +2206,30 @@ export function App() {
   toggleSplitRef.current = toggleSplit;
   useEffect(() => window.api.onMenuToggleSplit(() => toggleSplitRef.current()), []);
 
+  // View → Task Overview (Cmd/Ctrl+Shift+K) toggles the cross-repo overview.
+  useEffect(() => window.api.onMenuTaskOverview(() => setTaskOverviewOpen((v) => !v)), []);
+
+  // "Open board" from the overview: same route as a notification click
+  // (switches workspace if needed), then show that profile's Kanban once
+  // it's the active view. The pending flag expires so a navigation that
+  // never lands can't ambush a later visit to the profile.
+  const openBoardFromOverview = useCallback((profileId: string) => {
+    setTaskOverviewOpen(false);
+    setSelectedParallelId(null);
+    goToProfile(profileId);
+    if (settings.functionKanbanEnabled !== false) setPendingKanbanFor(profileId);
+  }, [goToProfile, settings.functionKanbanEnabled]);
+  useEffect(() => {
+    if (!pendingKanbanFor) return;
+    if (activeViewKey === pendingKanbanFor) {
+      selectTab('kanban');
+      setPendingKanbanFor(null);
+      return;
+    }
+    const expire = setTimeout(() => setPendingKanbanFor(null), 3000);
+    return () => clearTimeout(expire);
+  }, [pendingKanbanFor, activeViewKey, selectTab]);
+
   // ⇧F12 Find All References (editor action in lib/monaco-definitions.ts):
   // open the Search panel pre-filled with the symbol as a whole-word query.
   useEffect(() => {
@@ -2981,6 +3013,15 @@ export function App() {
           batchProgress={batchProgress}
           onBatchGenerate={handleBatchGenerateIcons}
           profilesWithoutIcons={profiles.filter((p) => !p.icon).length}
+        />
+      )}
+      {taskOverviewOpen && (
+        <TaskOverview
+          workspaces={settings.workspaces}
+          activeWorkspaceId={settings.activeWorkspaceId}
+          kanbanEnabled={settings.functionKanbanEnabled !== false}
+          onOpenBoard={openBoardFromOverview}
+          onClose={() => setTaskOverviewOpen(false)}
         />
       )}
       {/* Progressive hotkey HUD — holding ⌘/⌃/⌥ reveals the available
