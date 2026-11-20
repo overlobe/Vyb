@@ -7996,7 +7996,7 @@ select option {
   left: 0;
 }
 
-/* ── Task Overview (T-061) ─────────────────────────────────────────── */
+/* ── Task Overview (T-900) ─────────────────────────────────────────── */
 .modal.task-overview {
   width: min(1100px, 94vw);
   height: 86vh;

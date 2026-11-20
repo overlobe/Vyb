@@ -343,7 +343,7 @@ export function App() {
   // flame is lit (any status except offline), across all workspaces.
   const [activeProfilesMode, setActiveProfilesMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Cross-repo task overview (T-061). `pendingKanbanFor` holds the profile
+  // Cross-repo task overview (T-900). `pendingKanbanFor` holds the profile
   // whose Kanban should open once it becomes the active view (set by the
   // overview's "Open board").
   const [taskOverviewOpen, setTaskOverviewOpen] = useState(false);

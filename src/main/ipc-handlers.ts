@@ -4656,7 +4656,7 @@ export function setupIpcHandlers(window: BrowserWindow): void {
     return { url: ordnaHookServer.getHookUrl(), port: ordnaHookServer.getActivePort() };
   });
 
-  // Cross-repo task overview (T-061): read-only summary of every profile's
+  // Cross-repo task overview (T-900): read-only summary of every profile's
   // Ordna board. Spawns no PTYs or Ordna servers.
   ipcMain.handle(IPC_CHANNELS.ORDNA_OVERVIEW, () => collectTaskOverview(profiles, parallelManager.list()));
 

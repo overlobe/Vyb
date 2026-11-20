@@ -8,7 +8,7 @@ import type {
 } from '../../shared/types';
 
 /**
- * Cross-repo task overview (T-061). A read-only summary of every profile's
+ * Cross-repo task overview (T-900). A read-only summary of every profile's
  * Ordna board: one plain-language line per project plus a flat, filterable
  * task list. Detail stays in each project's own Kanban — "Open board" jumps
  * there.

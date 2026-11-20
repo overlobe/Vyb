@@ -724,7 +724,7 @@ export interface OrdnaTaskEnvelope {
   payload: OrdnaTaskPayload;
 }
 
-// ── Cross-repo task overview (T-061) ────────────────────────────────
+// ── Cross-repo task overview (T-900) ────────────────────────────────
 
 /** Repo-independent bucket an Ordna status maps to. Each repo can define
  * its own `statuses`, so the mapping is positional: first = open, last =

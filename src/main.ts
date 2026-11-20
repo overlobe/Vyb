@@ -259,7 +259,7 @@ function buildMenu() {
         // Split view (agent left + Files/Kanban/Web right) for the active
         // profile — routed to the renderer, which owns the per-view state.
         { label: 'Toggle Split View', accelerator: 'CmdOrCtrl+\\', click: toggleSplitView },
-        // Cross-repo summary of every profile's Ordna board (T-061).
+        // Cross-repo summary of every profile's Ordna board (T-900).
         { label: 'Task Overview', accelerator: 'CmdOrCtrl+Shift+K', click: openTaskOverview },
         { type: 'separator' as const },
         // macOS automatically appends its own "Enter Full Screen" item to
