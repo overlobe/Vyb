@@ -647,6 +647,8 @@ export const IPC_CHANNELS = {
   ORDNA_TASK_RECEIVED: 'ordna:taskReceived',
   ORDNA_HOOK_INFO: 'ordna:hookInfo',
   ORDNA_EXITED: 'ordna:exited',
+  ORDNA_OVERVIEW: 'ordna:overview',
+  MENU_TASK_OVERVIEW: 'menu:taskOverview',
   EDIT_MENU_ACTION: 'editMenu:action',
   EDIT_MENU_STATE: 'editMenu:state',
   // Renderer tells main whether the xterm terminal currently has focus, so
@@ -720,6 +722,79 @@ export interface OrdnaTaskEnvelope {
   /** The profile whose Ordna instance dispatched this task (resolved by cwd). */
   sourceProfileId: string | null;
   payload: OrdnaTaskPayload;
+}
+
+// ── Cross-repo task overview (T-900) ────────────────────────────────
+
+/** Repo-independent bucket an Ordna status maps to. Each repo can define
+ * its own `statuses`, so the mapping is positional: first = open, last =
+ * done, anything between = doing, `archived` = archived. */
+export type TaskBucket = 'open' | 'doing' | 'done' | 'archived';
+
+export interface TaskOverviewTask {
+  id: string;
+  title: string;
+  /** Raw Ordna status as written in the task file. */
+  status: string;
+  bucket: TaskBucket;
+  /** Status isn't in the repo's configured `statuses` list. */
+  unknownStatus: boolean;
+  priority: 'high' | 'medium' | 'low' | null;
+  assignee: string | null;
+  tags: string[];
+  depends_on: string[];
+  /** Open task whose same-repo dependencies are all done. */
+  ready: boolean;
+  /** Open task with at least one dependency that isn't done. */
+  blocked: boolean;
+  /** In-progress task not updated for STALE_DAYS. */
+  stalled: boolean;
+  updated_at: string;
+  /** A Kanban-dispatched parallel agent is live for this task. */
+  agentRunning: boolean;
+}
+
+export interface TaskOverviewCounts {
+  open: number;
+  ready: number;
+  blocked: number;
+  doing: number;
+  stalled: number;
+  done: number;
+  archived: number;
+  highReady: number;
+}
+
+export interface TaskOverviewProject {
+  /** Resolved working directory — the cwd Ordna runs in for this project. */
+  key: string;
+  /** Profile used for navigation (first profile pointing at this dir). */
+  profileId: string;
+  /** Every profile pointing at this directory. */
+  profileIds: string[];
+  name: string;
+  /** Display path (tilde-collapsed). */
+  path: string;
+  workspaceId: string | null;
+  branch: string | null;
+  storage: 'file' | 'hybrid' | 'namespace' | null;
+  /** 'ok' = tasks read; 'none' = no Ordna data here; 'error' = read failed. */
+  state: 'ok' | 'none' | 'error';
+  error?: string;
+  statuses: string[];
+  counts: TaskOverviewCounts;
+  /** Most recent task updated_at (ISO date), or null when no tasks. */
+  lastActivity: string | null;
+  /** Plain-language one-liner, e.g. "2 in progress · 4 ready to start". */
+  summary: string;
+  /** Open + in-progress tasks only (done/archived are counted, not listed). */
+  tasks: TaskOverviewTask[];
+}
+
+export interface TaskOverviewResult {
+  generatedAt: string;
+  staleDays: number;
+  projects: TaskOverviewProject[];
 }
 
 export interface FileEntry {
