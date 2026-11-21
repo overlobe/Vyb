@@ -4692,6 +4692,9 @@ select option {
   border-left: 1px solid var(--c-surface0);
   overflow: hidden;
   position: relative;
+  /* In a narrow Files pane the list gives way before the rail is pushed
+     off-screen, so the show/hide toggle is always reachable. */
+  max-width: 60%;
 }
 /* The tree's resize handle sits on its left edge (docked or overlay), so
    one handle serves both modes. */
@@ -4702,14 +4705,12 @@ select option {
   left: 0;
 }
 
-/* Auto-hide mode: the tree leaves the layout and slides in over the
-   editor from the right edge while hovered. `.file-explorer` is the
-   positioned, overflow-clipped containing block. */
+/* Auto-hide: the tree leaves the layout and slides out beside the rail
+   while hovered. `.file-explorer` is the positioned, clipped container. */
 .file-tree-pane.is-overlay {
   position: absolute;
   top: 0;
-  /* Opens beside the rail, so the rail (and its dock button) stays visible. */
-  right: 22px;
+  right: 22px; /* beside the rail, which stays visible */
   bottom: 0;
   z-index: 30;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
@@ -4722,10 +4723,6 @@ select option {
   visibility: visible;
   transition: transform 0.16s ease, visibility 0s;
 }
-/* Kept open (clicked into): an accent edge says it won't hide on leave. */
-.file-tree-pane.is-overlay.is-sticky {
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35), inset 2px 0 0 var(--c-blue);
-}
 @media (prefers-reduced-motion: reduce) {
   .file-tree-pane.is-overlay,
   .file-tree-pane.is-overlay.is-peeking {
@@ -4733,8 +4730,7 @@ select option {
   }
 }
 
-/* The slim strip the auto-hidden tree tucks into. Hovering it slides
-   the tree in. */
+/* The rail: the tree's show/hide toggle, always on the right edge. */
 .file-tree-rail {
   flex-shrink: 0;
   width: 22px;
@@ -4742,8 +4738,11 @@ select option {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding-top: 10px;
+  margin: 0;
+  padding: 10px 0 0;
+  font: inherit;
   background: var(--c-mantle);
+  border: none;
   border-left: 1px solid var(--c-surface0);
   color: var(--c-overlay1);
   cursor: pointer;
@@ -4754,28 +4753,16 @@ select option {
   color: var(--c-text);
   background: var(--c-surface0);
 }
+.file-tree-rail:focus-visible {
+  outline: 1px solid var(--c-blue);
+  outline-offset: -1px;
+}
 .file-tree-rail-label {
   writing-mode: vertical-rl;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-/* Dock button at the foot of the rail: one click keeps the tree open. */
-.file-tree-rail-dock {
-  margin-top: auto;
-  margin-bottom: 8px;
-  padding: 4px 2px;
-  background: none;
-  border: none;
-  border-radius: 3px;
-  color: inherit;
-  cursor: pointer;
-  display: flex;
-}
-.file-tree-rail-dock:hover {
-  color: var(--c-blue);
-  background: var(--c-surface1);
 }
 
 
@@ -6066,23 +6053,36 @@ select option {
   color: var(--c-text);
   font-size: 15px;
   line-height: 1.7;
-  /* Long URLs and inline code wrap instead of forcing a minimum width. */
+  /* Long URLs, inline code and table cells wrap instead of forcing a
+     minimum width, so tables fit the pane rather than scrolling sideways. */
   overflow-wrap: anywhere;
 }
-
-/* Tables scroll inside their own box (see the `table` component in
-   FileExplorer) so a wide table doesn't widen the whole preview. Cells
-   keep whole words; the box scrolls if they don't fit. */
-.md-table-scroll {
-  overflow-x: auto;
-  margin: 0 0 16px;
-}
-.md-table-scroll > table {
-  margin: 0;
-}
-.md-table-scroll th,
-.md-table-scroll td {
+/* Tables fit the pane width. Ordinary words in cells stay whole; links
+   and inline code, the usual reason a table gets wide, may break anywhere. */
+.readme-content th,
+.readme-content td {
   overflow-wrap: normal;
+}
+.readme-content th :is(code, a),
+.readme-content td :is(code, a) {
+  overflow-wrap: anywhere;
+}
+/* Narrow preview (the Files view sets a query container): tighter cells,
+   and words may break so the table always fits the pane. Hyphenation
+   points are used first; breaking anywhere is the last resort. */
+@container (max-width: 420px) {
+  /* Equal columns: the automatic layout gives nearly all the width to
+     long cells and stacks short words letter by letter. */
+  .readme-content table {
+    table-layout: fixed;
+    font-size: 13px;
+  }
+  .readme-content th,
+  .readme-content td {
+    padding: 4px 6px;
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
 }
 
 .readme-content h1 {
