@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('api', {
   openUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_URL, url),
 
+  openInBrowser: (filePath: string): Promise<{ ok: boolean; browser?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_IN_BROWSER, filePath),
+
   openWebviewDevTools: (targetId: number, hostId: number): Promise<boolean> =>
     ipcRenderer.invoke(IPC_CHANNELS.WEBVIEW_OPEN_DEVTOOLS, targetId, hostId),
   closeWebviewDevTools: (targetId: number): Promise<boolean> =>

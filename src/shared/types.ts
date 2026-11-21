@@ -456,6 +456,7 @@ export const IPC_CHANNELS = {
   SHELL_OPEN_FORK: 'shell:openFork',
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
   SHELL_OPEN_URL: 'shell:openUrl',
+  SHELL_OPEN_IN_BROWSER: 'shell:openInBrowser',
   /** Embed DevTools for a target `<webview>` (by webContentsId) into a
    * second `<webview>` (host) so the DevTools panel renders inline
    * inside the in-app browser instead of opening a separate window. */

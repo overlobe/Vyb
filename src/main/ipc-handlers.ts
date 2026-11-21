@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { pathToFileURL } from 'url';
 import { IPC_CHANNELS, Profile, AppSettings, SidebarLayout, GitStatus, GitCommit, GitRef, GitCheckoutResult, GitCommitResult, GitOpResult, GitMergeResult, GitMergePreviewResult, GitRebaseResult, GitCreatePrResult, GitStash, FileEntry, ProfileMemoryMap, OrdnaTaskPayload, ParallelAgent, resolveAgent, DEFAULT_AGENTS } from '../shared/types';
 import { PtyManager } from './pty-manager';
 import { StatusDetector } from './status-detector';
@@ -886,6 +887,40 @@ export function setupIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_URL, (_, url: string) => {
     shell.openExternal(url);
   });
+
+  // Open a local file (an HTML page from the Files view) in the default
+  // web browser. Handing a file:// URL to shell.openExternal would open
+  // whatever app owns the file type, which for .html is often a code
+  // editor, so on macOS we ask which app handles https:// and open the
+  // file with that one.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_OPEN_IN_BROWSER,
+    async (_, filePath: string): Promise<{ ok: boolean; browser?: string; error?: string }> => {
+      try {
+        if (!fs.statSync(filePath).isFile()) return { ok: false, error: 'Not a file' };
+      } catch {
+        return { ok: false, error: 'File not found' };
+      }
+      const fileUrl = pathToFileURL(filePath).href;
+      if (process.platform === 'darwin') {
+        try {
+          const info = await app.getApplicationInfoForProtocol('https://');
+          if (info?.path) {
+            await execFileAsync('open', ['-a', info.path, filePath]);
+            return { ok: true, browser: info.name };
+          }
+        } catch (err) {
+          console.error('[open-in-browser] default browser lookup/open failed, falling back:', err);
+        }
+      }
+      try {
+        await shell.openExternal(fileUrl);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
   // Embed the target webview's DevTools panel inside a second webview
   // (the "host"). Both are <webview> tags in the renderer; the renderer

@@ -178,6 +178,8 @@ Settings → Apps tab. Each app: `name`, `icon` (key from `src/renderer/icons.ts
 
 **File operations**: Right-click context menu with Copy, Paste, Delete (confirmation dialog), Rename (inline input), New File, New Folder. Tree header has New File/Folder buttons. IPC channels: `FILE_DELETE`, `FILE_RENAME`, `FILE_COPY`, `FILE_CREATE_DIR`, `FILE_CREATE`, `FILE_SAVE_AS`.
 
+**Opening HTML pages**: for `.html`/`.htm`/`.xhtml` files, the floating editor controls and the tree context menu offer "Open in Web Tab" (hidden when Settings → Functions → Web is off) and "Open in Browser". The Web tab route dispatches the existing `open-url-in-browser` event with a `file://` URL from `fileUrlForPath()`. The browser route calls `SHELL_OPEN_IN_BROWSER`, which on macOS opens the file with the app registered for `https://` (`app.getApplicationInfoForProtocol`) rather than `shell.openExternal(file://…)`, since that would open whatever owns `.html`, often a code editor. Both open the saved file and show an info toast when the tab has unsaved edits. `WebViewer` reloads, rather than re-assigning `src`, when asked for the URL it is already showing, which avoids a spurious `ERR_ABORTED`.
+
 Language detection by extension (JS/TS/JSON/CSS/HTML/Python/Markdown). Image files render as `<img>` via `local-file://`.
 
 ### Flame Indicators

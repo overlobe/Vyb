@@ -66,6 +66,9 @@ interface FileExplorerProps {
   finalNewlineOnSave?: boolean;
   /** T-046: include the sticky-scroll plugin in the editor. */
   stickyScroll?: boolean;
+  /** Settings → Functions → Web is on, so HTML files can be opened in the
+   * in-app Web tab as well as the system browser. */
+  webEnabled?: boolean;
   /** Show dotfiles in the file tree. Filter happens renderer-side
    * so toggling is live — no IPC round-trip, no tree reload. */
   showHiddenFiles?: boolean;
@@ -127,6 +130,20 @@ function isImageFile(filename: string): boolean {
 
 function isMdFile(filename: string): boolean {
   return MD_EXT.test(filename);
+}
+
+const HTML_EXT = /\.(html?|xhtml)$/i;
+function isHtmlFile(filename: string): boolean {
+  return HTML_EXT.test(filename);
+}
+
+/** file:// URL for a local path. Each segment is percent-encoded so names
+ * with spaces, '#' or '?' survive; a Windows drive letter is kept as is. */
+function fileUrlForPath(p: string): string {
+  const parts = p.replace(/\\/g, '/').split('/');
+  const drive = /^[A-Za-z]:$/.test(parts[0]) ? parts.shift() : null;
+  const encoded = parts.map(encodeURIComponent).join('/');
+  return drive ? `file:///${drive}/${encoded}` : `file://${encoded}`;
 }
 
 /** PDFs render in Chromium's built-in PDF viewer via an iframe on the
@@ -338,9 +355,13 @@ interface ContextMenuProps {
   /** Reveal the entry in the OS file manager. Only present when there's an
    * entry (the empty-area menu has no target). */
   onShowInFinder: (() => void) | null;
+  /** HTML files only: open the page in the in-app Web tab (null when the
+   * Web function is off) or in the default browser. */
+  onOpenInWebTab: (() => void) | null;
+  onOpenInBrowser: (() => void) | null;
 }
 
-function ContextMenu({ x, y, entry, clipboard, onClose, onCopy, onPaste, onDelete, onRename, onNewFile, onNewDir, onOpenNewTab, onShowHistory, onShowInFinder }: ContextMenuProps) {
+function ContextMenu({ x, y, entry, clipboard, onClose, onCopy, onPaste, onDelete, onRename, onNewFile, onNewDir, onOpenNewTab, onShowHistory, onShowInFinder, onOpenInWebTab, onOpenInBrowser }: ContextMenuProps) {
   useEffect(() => {
     const handleClick = () => onClose();
     window.addEventListener('click', handleClick);
@@ -357,6 +378,28 @@ function ContextMenu({ x, y, entry, clipboard, onClose, onCopy, onPaste, onDelet
             </span>
             Open in New Tab
           </button>
+          {onOpenInWebTab && (
+            <button className="file-ctx-item" onClick={onOpenInWebTab}>
+              <span className="file-ctx-icon">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M1.5 8h13M8 1.5c1.8 1.8 2.6 4 2.6 6.5S9.8 12.7 8 14.5M8 1.5C6.2 3.3 5.4 5.5 5.4 8s.8 4.7 2.6 6.5" />
+                </svg>
+              </span>
+              Open in Web Tab
+            </button>
+          )}
+          {onOpenInBrowser && (
+            <button className="file-ctx-item" onClick={onOpenInBrowser}>
+              <span className="file-ctx-icon">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12.5 9v4a1 1 0 01-1 1h-8a1 1 0 01-1-1V4.5a1 1 0 011-1h4" />
+                  <path d="M10 1.5h4.5V6M14.5 1.5L7.5 8.5" />
+                </svg>
+              </span>
+              Open in Browser
+            </button>
+          )}
           {onShowHistory && (
             <button className="file-ctx-item" onClick={onShowHistory}>
               <span className="file-ctx-icon">
@@ -753,6 +796,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   trimWhitespaceOnSave = false,
   finalNewlineOnSave = false,
   stickyScroll: stickyScrollEnabled = true,
+  webEnabled = true,
   showHiddenFiles = true,
   showChangedOnly: showChangedOnlyProp,
   onShowChangedOnlyChange,
@@ -2209,6 +2253,34 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
     setCtxMenu(null);
   }, [ctxMenu]);
 
+  // HTML pages: open the file as saved on disk, either in the in-app Web
+  // tab (App.tsx handles 'open-url-in-browser') or the system's default
+  // browser. Unsaved edits aren't on disk yet, so say so.
+  const warnIfUnsaved = useCallback((path: string, where: string) => {
+    if (modifiedSetRef.current.has(path)) {
+      toastInfo(`${fileName(path)} has unsaved changes. ${where} shows the saved version; save (⌘S) and open it again to see them.`);
+    }
+  }, []);
+  const openHtmlInWebTab = useCallback((path: string) => {
+    warnIfUnsaved(path, 'The Web tab');
+    window.dispatchEvent(new CustomEvent('open-url-in-browser', { detail: { url: fileUrlForPath(path) } }));
+  }, [warnIfUnsaved]);
+  const openHtmlInBrowser = useCallback(async (path: string) => {
+    warnIfUnsaved(path, 'The browser');
+    const res = await window.api.openInBrowser(path);
+    if (!res.ok) toastError(`Couldn't open ${fileName(path)} in the browser: ${res.error ?? 'unknown error'}`);
+  }, [warnIfUnsaved]);
+  const handleCtxOpenInWebTab = useCallback(() => {
+    const entry = ctxMenu?.entry;
+    setCtxMenu(null);
+    if (entry) openHtmlInWebTab(entry.path);
+  }, [ctxMenu, openHtmlInWebTab]);
+  const handleCtxOpenInBrowser = useCallback(() => {
+    const entry = ctxMenu?.entry;
+    setCtxMenu(null);
+    if (entry) void openHtmlInBrowser(entry.path);
+  }, [ctxMenu, openHtmlInBrowser]);
+
   // When the "show changed only" toggle flips while a file is open,
   // remount the editor so the unified merge view is attached
   // (`unifiedMergeView` is a fixed mount-time extension — easier to
@@ -2521,6 +2593,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
   const activeIsPdf = activeTabPath ? isPdfFile(fileName(activeTabPath)) : false;
   const activeIsDocx = activeTabPath ? isDocxFile(fileName(activeTabPath)) : false;
   const activeIsMd = activeTabPath ? isMdFile(fileName(activeTabPath)) : false;
+  const activeIsHtml = activeTabPath ? isHtmlFile(fileName(activeTabPath)) : false;
   const activeIsExcalidraw = activeTabPath ? isExcalidrawFile(fileName(activeTabPath)) : false;
   const activeIsModified = activeTabPath ? modifiedSet.has(activeTabPath) : false;
   // For markdown tabs: 'view' (default) renders the rendered markdown,
@@ -2761,7 +2834,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
             the File / Edit menus, so the toolbar is gone. This sits in the
             editor's top-right corner, overlaying the content. */}
         {activeTabPath && !activeIsImage
-          && ((monacoDiffPath && activeTabPath === monacoDiffPath) || monacoConflicted || activeIsMd) && (
+          && ((monacoDiffPath && activeTabPath === monacoDiffPath) || monacoConflicted || activeIsMd || activeIsHtml) && (
           <div className="file-editor-float">
             {monacoDiffPath && activeTabPath === monacoDiffPath && (
               <>
@@ -2827,6 +2900,32 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
                     <circle cx="8" cy="8" r="2" />
                   </svg>
                 )}
+              </button>
+            )}
+            {activeIsHtml && webEnabled && (
+              <button
+                className="file-tab-action-btn file-open-web-btn"
+                onClick={() => openHtmlInWebTab(activeTabPath)}
+                title="Open this page in the Web tab"
+              >
+                {/* globe, as on the Web tab */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M1.5 8h13M8 1.5c1.8 1.8 2.6 4 2.6 6.5S9.8 12.7 8 14.5M8 1.5C6.2 3.3 5.4 5.5 5.4 8s.8 4.7 2.6 6.5" />
+                </svg>
+              </button>
+            )}
+            {activeIsHtml && (
+              <button
+                className="file-tab-action-btn file-open-browser-btn"
+                onClick={() => { void openHtmlInBrowser(activeTabPath); }}
+                title="Open this page in your default browser"
+              >
+                {/* box with an arrow leaving it: open outside Vyb */}
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12.5 9v4a1 1 0 01-1 1h-8a1 1 0 01-1-1V4.5a1 1 0 011-1h4" />
+                  <path d="M10 1.5h4.5V6M14.5 1.5L7.5 8.5" />
+                </svg>
               </button>
             )}
           </div>
@@ -3280,6 +3379,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(fu
           onOpenNewTab={ctxMenu.entry && !ctxMenu.entry.isDirectory ? handleOpenNewTab : null}
           onShowHistory={ctxMenu.entry && !ctxMenu.entry.isDirectory ? handleShowHistory : null}
           onShowInFinder={ctxMenu.entry ? handleShowInFinder : null}
+          onOpenInWebTab={ctxMenu.entry && !ctxMenu.entry.isDirectory && webEnabled && isHtmlFile(ctxMenu.entry.name)
+            ? handleCtxOpenInWebTab : null}
+          onOpenInBrowser={ctxMenu.entry && !ctxMenu.entry.isDirectory && isHtmlFile(ctxMenu.entry.name)
+            ? handleCtxOpenInBrowser : null}
         />
       )}
 

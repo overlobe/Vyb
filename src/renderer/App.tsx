@@ -100,6 +100,7 @@ declare global {
       openInVSCode: (folderPath: string) => Promise<void>;
       openInFork: (folderPath: string) => Promise<void>;
       openUrl: (url: string) => Promise<void>;
+      openInBrowser: (filePath: string) => Promise<{ ok: boolean; browser?: string; error?: string }>;
       openWebviewDevTools: (targetId: number, hostId: number) => Promise<boolean>;
       closeWebviewDevTools: (targetId: number) => Promise<boolean>;
       registerWebviewContextMenu: (targetId: number) => Promise<boolean>;
@@ -2687,6 +2688,7 @@ export function App() {
                   trimWhitespaceOnSave={settings.trimWhitespaceOnSave === true}
                   finalNewlineOnSave={settings.finalNewlineOnSave === true}
                   stickyScroll={settings.editorStickyScroll !== false}
+                  webEnabled={settings.functionWebEnabled !== false}
                   showHiddenFiles={settings.showHiddenFiles !== false}
                   editorEngine={settings.editorEngine ?? 'monaco'}
                   editorFontSize={settings.editorFontSize ?? 12}

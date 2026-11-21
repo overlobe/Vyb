@@ -245,7 +245,15 @@ export function WebViewer({ instanceKey, initialUrl, hidden, pendingNavigate, on
     setAddress(target);
     updateTab(activeIdRef.current, { committedUrl: target });
     const el = activeWebview();
-    if (el) el.src = target;
+    if (!el) return;
+    // Asked for the page already showing (re-opening a local HTML file
+    // after saving it, or clicking the same link twice): reload it.
+    // Re-assigning the same src aborts the navigation in flight and logs
+    // ERR_ABORTED, though the page does load.
+    let current = '';
+    try { current = el.getURL(); } catch { /* guest not attached yet */ }
+    if (current === target) el.reload();
+    else el.src = target;
   }, [pendingNavigate?.nonce]);
 
   // target=_blank / window.open from a page in ANY of this instance's
